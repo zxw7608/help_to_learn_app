@@ -15,6 +15,7 @@ class RegisterPage extends ConsumerStatefulWidget {
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
+  final _serverUrlCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
@@ -22,7 +23,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _serverUrlCtrl.text = ApiClient.baseUrl;
+  }
+
+  @override
   void dispose() {
+    _serverUrlCtrl.dispose();
     _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
@@ -37,6 +45,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     });
 
     try {
+      final newUrl = _serverUrlCtrl.text.trim();
+      if (newUrl.isNotEmpty) {
+        await ApiClient.setBaseUrl(newUrl);
+      }
       final data = await authApi.register(
         username: _usernameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
@@ -78,6 +90,17 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 20),
+                TextFormField(
+                  controller: _serverUrlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '服务器地址',
+                    prefixIcon: Icon(Icons.language),
+                  ),
+                  keyboardType: TextInputType.url,
+                  validator: (v) =>
+                      v == null || v.isEmpty ? '请输入服务器地址' : null,
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _usernameCtrl,
                   decoration: const InputDecoration(

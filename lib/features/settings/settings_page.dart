@@ -27,6 +27,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   List<Map<String, dynamic>> _ankiDecks = [];
   List<Map<String, dynamic>> _ankiModels = [];
   bool _ankiAvailable = false;
+  bool _detectingAnki = false;
 
   @override
   void initState() {
@@ -60,16 +61,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _checkAnki() async {
+    setState(() => _detectingAnki = true);
     final available = await AnkiService.instance.isAvailable();
-    if (!available) return;
+    if (!available) {
+      setState(() {
+        _ankiAvailable = false;
+        _ankiDecks = [];
+        _ankiModels = [];
+        _detectingAnki = false;
+      });
+      return;
+    }
     final hasPermission = await AnkiService.instance.requestPermission();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      setState(() {
+        _ankiAvailable = false;
+        _ankiDecks = [];
+        _ankiModels = [];
+        _detectingAnki = false;
+      });
+      return;
+    }
     final decks = await AnkiService.instance.getDeckList();
     final models = await AnkiService.instance.getModelList();
     setState(() {
       _ankiAvailable = true;
       _ankiDecks = decks;
       _ankiModels = models;
+      _detectingAnki = false;
     });
   }
 
@@ -283,6 +302,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               helperText: '例如: Basic, HelpToLearn',
                             ),
                           ),
+                        const SizedBox(height: 12),
+                        // Re-detect button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _detectingAnki ? null : _checkAnki,
+                            icon: _detectingAnki
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.refresh, size: 16),
+                            label: Text(_detectingAnki ? '检测中...' : '重新检测 AnkiDroid'),
+                          ),
+                        ),
                       ],
                     ),
                   ),

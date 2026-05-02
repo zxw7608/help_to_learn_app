@@ -51,6 +51,8 @@ class _PlaylistPageState extends ConsumerState<PlaylistPage> {
                     onPlayCurrent: () => ref
                         .read(playlistManagerProvider.notifier)
                         .playFromCurrent(),
+                    onTapMode: () =>
+                        ref.read(playlistManagerProvider.notifier).cycleMode(),
                   ),
               ],
             ),
@@ -81,54 +83,45 @@ class _PlaylistPageState extends ConsumerState<PlaylistPage> {
   }
 
   Widget _buildList(PlaylistState state, ColorScheme cs) {
-    return Column(
-      children: [
-        // Playback mode selectors
-        _ModeSelector(state: state, cs: cs),
-        const Divider(height: 1),
-        // Playlist entries
-        Expanded(
-          child: ReorderableListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            itemCount: state.entries.length,
-            onReorder: (oldIdx, newIdx) {
-              ref.read(playlistManagerProvider.notifier).reorder(
-                    oldIdx,
-                    newIdx,
-                  );
-            },
-            proxyDecorator: (child, index, animation) {
-              return AnimatedBuilder(
-                animation: animation,
-                builder: (_, child) => Material(
-                  color: Colors.transparent,
-                  elevation: 4,
-                  child: child,
-                ),
-                child: child,
-              );
-            },
-            itemBuilder: (ctx, i) {
-              final entry = state.entries[i];
-              final isCurrent = i == state.currentIndex;
-              return _PlaylistCard(
-                key: ValueKey(entry.materialId),
-                entry: entry,
-                index: i,
-                isCurrent: isCurrent,
-                isPlaying: isCurrent && _isPlaying(),
-                onTap: () {
-                  ref.read(playlistManagerProvider.notifier).playAtIndex(i);
-                  _goToPlayer();
-                },
-                onDelete: () {
-                  ref.read(playlistManagerProvider.notifier).removeMaterialAt(i);
-                },
-              );
-            },
+    return ReorderableListView.builder(
+      key: const PageStorageKey('playlist_reorderable'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      itemCount: state.entries.length,
+      onReorder: (oldIdx, newIdx) {
+        ref.read(playlistManagerProvider.notifier).reorder(
+              oldIdx,
+              newIdx,
+            );
+      },
+      proxyDecorator: (child, index, animation) {
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (_, child) => Material(
+            color: Colors.transparent,
+            elevation: 4,
+            child: child,
           ),
-        ),
-      ],
+          child: child,
+        );
+      },
+      itemBuilder: (ctx, i) {
+        final entry = state.entries[i];
+        final isCurrent = i == state.currentIndex;
+        return _PlaylistCard(
+          key: ValueKey(entry.materialId),
+          entry: entry,
+          index: i,
+          isCurrent: isCurrent,
+          isPlaying: isCurrent && _isPlaying(),
+          onTap: () {
+            ref.read(playlistManagerProvider.notifier).playAtIndex(i);
+            _goToPlayer();
+          },
+          onDelete: () {
+            ref.read(playlistManagerProvider.notifier).removeMaterialAt(i);
+          },
+        );
+      },
     );
   }
 
@@ -164,110 +157,6 @@ class _PlaylistPageState extends ConsumerState<PlaylistPage> {
               backgroundColor: Colors.redAccent,
             ),
             child: const Text('清空'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Mode Selector ──────────────────────────────────────────────────────────
-
-class _ModeSelector extends ConsumerWidget {
-  final PlaylistState state;
-  final ColorScheme cs;
-  const _ModeSelector({required this.state, required this.cs});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(playlistManagerProvider.notifier);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: const Color(0xFF1E1E2E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Material mode row
-          Row(
-            children: [
-              const Text('素材播放：',
-                  style: TextStyle(fontSize: 13, color: Colors.white54)),
-              const SizedBox(width: 8),
-              ...MaterialPlayMode.values.map((mode) {
-                final selected = state.materialMode == mode;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: Text(mode.shortLabel,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: selected ? Colors.white : Colors.white54)),
-                    selected: selected,
-                    selectedColor: cs.primary.withOpacity(0.3),
-                    backgroundColor: Colors.white10,
-                    side: BorderSide(
-                        color: selected ? cs.primary : Colors.transparent),
-                    onSelected: (_) => notifier.setMaterialMode(mode),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                );
-              }),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Segment mode row
-          Row(
-            children: [
-              const Text('片段播放：',
-                  style: TextStyle(fontSize: 13, color: Colors.white54)),
-              const SizedBox(width: 8),
-              ...SegmentPlayMode.values.map((mode) {
-                final selected = state.segmentMode == mode;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: Text(mode.shortLabel,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: selected ? Colors.white : Colors.white54)),
-                    selected: selected,
-                    selectedColor: cs.primary.withOpacity(0.3),
-                    backgroundColor: Colors.white10,
-                    side: BorderSide(
-                        color: selected ? cs.primary : Colors.transparent),
-                    onSelected: (_) => notifier.setSegmentMode(mode),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                );
-              }),
-            ],
-          ),
-          const SizedBox(height: 6),
-          // Playlist loop toggle
-          Row(
-            children: [
-              const Text('列表循环：',
-                  style: TextStyle(fontSize: 13, color: Colors.white54)),
-              const SizedBox(width: 8),
-              FilterChip(
-                label: Text(state.playlistLoop ? '开' : '关',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: state.playlistLoop
-                            ? Colors.white
-                            : Colors.white54)),
-                selected: state.playlistLoop,
-                selectedColor: cs.primary.withOpacity(0.3),
-                backgroundColor: Colors.white10,
-                side: BorderSide(
-                    color: state.playlistLoop
-                        ? cs.primary
-                        : Colors.transparent),
-                onSelected: (_) => notifier.togglePlaylistLoop(),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
           ),
         ],
       ),
@@ -405,7 +294,8 @@ class _PlaylistCard extends StatelessWidget {
 class _MiniPlayerBar extends StatelessWidget {
   final PlaylistState state;
   final VoidCallback onPlayCurrent;
-  const _MiniPlayerBar({required this.state, required this.onPlayCurrent});
+  final VoidCallback onTapMode;
+  const _MiniPlayerBar({required this.state, required this.onPlayCurrent, required this.onTapMode});
 
   @override
   Widget build(BuildContext context) {
@@ -484,21 +374,24 @@ class _MiniPlayerBar extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Mode + chevron
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        info.playModeLabel,
-                        style: const TextStyle(
-                            fontSize: 10, color: Colors.white38),
-                      ),
-                      const SizedBox(width: 2),
-                      const Icon(Icons.chevron_right,
-                          size: 18, color: Colors.white38),
-                    ],
+                // Mode toggle
+                GestureDetector(
+                  onTap: onTapMode,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          info.playModeLabel,
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.white38),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.chevron_right,
+                            size: 18, color: Colors.white38),
+                      ],
+                    ),
                   ),
                 ),
               ],

@@ -61,6 +61,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        super.onDestroy()
         Log.i("MainActivity", "onDestroy: requesting Dart audio cleanup")
         var destroyed = false
         val handler = Handler(Looper.getMainLooper())

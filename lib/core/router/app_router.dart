@@ -107,6 +107,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
 // ─── Main Shell (Bottom Nav) ─────────────────────────────────────────────────
 
+String _lastMaterialsPath = '/materials';
+String _lastPlaylistPath = '/playlist';
+String _lastSettingsPath = '/settings';
+
 class MainShell extends StatelessWidget {
   final Widget child;
   const MainShell({super.key, required this.child});
@@ -123,7 +127,17 @@ class MainShell extends StatelessWidget {
 class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).matchedLocation;
+    final location = GoRouterState.of(context).uri.toString();
+
+    // Track last path for each tab
+    if (location.startsWith('/playlist')) {
+      _lastPlaylistPath = location;
+    } else if (location.startsWith('/settings')) {
+      _lastSettingsPath = location;
+    } else {
+      _lastMaterialsPath = location;
+    }
+
     int currentIndex;
     if (location.startsWith('/playlist')) {
       currentIndex = 1;
@@ -138,13 +152,25 @@ class _BottomNav extends StatelessWidget {
       onTap: (i) {
         switch (i) {
           case 0:
-            context.go('/materials');
+            if (location.startsWith('/materials')) {
+              context.go('/materials');
+            } else {
+              context.go(_lastMaterialsPath);
+            }
             break;
           case 1:
-            context.go('/playlist');
+            if (location.startsWith('/playlist')) {
+              context.go('/playlist');
+            } else {
+              context.go(_lastPlaylistPath);
+            }
             break;
           case 2:
-            context.go('/settings');
+            if (location.startsWith('/settings')) {
+              context.go('/settings');
+            } else {
+              context.go(_lastSettingsPath);
+            }
             break;
         }
       },

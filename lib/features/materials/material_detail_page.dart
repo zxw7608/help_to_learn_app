@@ -41,6 +41,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
   bool _wasPlaying = false;
 
   VoidCallback? _playbackListener;
+  PlaylistManager? _playlistManager;
 
   @override
   void initState() {
@@ -48,6 +49,8 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     _load();
     AppLogger.info('MaterialDetailPage: id=${widget.materialId}',
         tag: 'MaterialDetail');
+
+    _playlistManager = ref.read(playlistManagerProvider.notifier);
 
     final service = app_main.audioService;
     _playbackListener = () {
@@ -91,7 +94,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     service.onRequestAnkiPush = () => _pushCurrentToAnki();
 
     // Prompt when playlist auto-advances to another material
-    ref.read(playlistManagerProvider.notifier).onMaterialSwitched = (newId) {
+    _playlistManager!.onMaterialSwitched = (newId) {
       if (mounted && newId != widget.materialId) {
         _showNavigatePrompt(newId);
       }
@@ -102,7 +105,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
   void dispose() {
     // Unregister notification Anki callback
     app_main.audioService.onRequestAnkiPush = null;
-    ref.read(playlistManagerProvider.notifier).onMaterialSwitched = null;
+    _playlistManager?.onMaterialSwitched = null;
     if (_playbackListener != null) {
       app_main.audioService.playbackInfo.removeListener(_playbackListener!);
     }

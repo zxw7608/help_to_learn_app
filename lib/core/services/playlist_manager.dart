@@ -36,10 +36,10 @@ class PlaylistManager extends Notifier<PlaylistState> {
   void _wireAudioCallbacks() {
     _audio.onMaterialFinished = () => _handleMaterialFinished();
     _audio.onPlaylistNav = (bool next) => _navigatePlaylist(next);
-    _audio.onModeCycle = () => _cyclePlayMode();
+    _audio.onModeCycle = () => cycleMode();
   }
 
-  void _cyclePlayMode() {
+  void cycleMode() {
     // Cycle segment mode first, then material mode, then playlist loop
     final segModes = SegmentPlayMode.values;
     final matModes = MaterialPlayMode.values;

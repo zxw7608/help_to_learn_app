@@ -28,6 +28,7 @@ class PlaybackInfo {
   final String playModeLabel;
   final bool hasPrevPlaylist;
   final bool hasNextPlaylist;
+  final double speed;
 
   const PlaybackInfo({
     this.playing = false,
@@ -45,6 +46,7 @@ class PlaybackInfo {
     this.playModeLabel = '',
     this.hasPrevPlaylist = false,
     this.hasNextPlaylist = false,
+    this.speed = 1.0,
   });
 }
 
@@ -100,6 +102,11 @@ class CustomAudioService {
 
   void setSegmentPlayMode(SegmentPlayMode mode) {
     _segmentPlayMode = mode;
+  }
+
+  Future<void> setSpeed(double speed) async {
+    await _player.setSpeed(speed);
+    _sendNotification();
   }
 
   void updatePlaylistInfo({
@@ -435,6 +442,7 @@ class CustomAudioService {
       playModeLabel: _modeLabel,
       hasPrevPlaylist: _hasPrevPlaylist,
       hasNextPlaylist: _hasNextPlaylist,
+      speed: _player.speed,
     );
     final payload = <String, dynamic>{
       'title': title,

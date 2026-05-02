@@ -12,8 +12,11 @@ import '../../features/settings/log_viewer_page.dart';
 import '../../features/player/player_page.dart';
 import '../api/api_client.dart';
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/materials',
     redirect: (context, state) async {
       final hasToken = await TokenStorage.hasToken();
@@ -49,7 +52,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 name: 'material-detail',
                 builder: (context, state) {
                   final id = int.parse(state.pathParameters['id']!);
-                  return MaterialDetailPage(materialId: id);
+                  final autoPlay = state.uri.queryParameters['autoPlay'] == 'true';
+                  return MaterialDetailPage(materialId: id, autoPlay: autoPlay);
                 },
               ),
             ],

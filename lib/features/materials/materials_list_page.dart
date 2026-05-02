@@ -4,10 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:timeago/timeago.dart' as timeago;
-
 import '../../core/api/materials_api.dart';
 import '../../core/models/material.dart';
 import '../../core/logging/app_logger.dart';
+import '../../core/router/app_router.dart';
+import '../../main.dart' as app_main;
 
 class MaterialsListPage extends ConsumerStatefulWidget {
   const MaterialsListPage({super.key});
@@ -33,6 +34,7 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
+    _setupMaterialNavigation();
     _loadMaterials();
     AppLogger.info('MaterialsListPage opened', tag: 'MaterialsList');
   }
@@ -155,6 +157,8 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
         _loading = false;
         _loadingMore = false;
       });
+      // Sync materials to audio handler for notification navigation
+      _syncMaterialsToAudioHandler();
       AppLogger.debug('Loaded ${result.items.length} materials (page $_page)',
           tag: 'MaterialsList');
     } catch (e, st) {
@@ -182,6 +186,38 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
       _page++;
     });
     _loadMaterials();
+  }
+
+  void _setupMaterialNavigation() {
+    app_main.audioService.onMaterialChanged = (index) {
+      if (index >= 0 && index < _materials.length) {
+        final context = rootNavigatorKey.currentContext;
+        if (context != null) {
+          context.pushNamed(
+            'material-detail',
+            pathParameters: {'id': _materials[index].id.toString()},
+            queryParameters: {'autoPlay': 'true'},
+          );
+        }
+      }
+    };
+  }
+
+  void _syncMaterialsToAudioHandler() {
+    app_main.audioService.setMaterialsList(
+      _materials
+          .map((m) => MapEntry(m.id, m.title))
+          .toList(),
+      _currentMaterialId(),
+    );
+  }
+
+  int _currentMaterialId() {
+    final currentId = app_main.audioService.currentMaterialId;
+    if (currentId.isNotEmpty) {
+      return int.tryParse(currentId) ?? 0;
+    }
+    return 0;
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────

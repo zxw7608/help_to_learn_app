@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:audio_service/audio_service.dart';
 import '../../main.dart' as app_main;
-import '../../core/services/audio_handler.dart';
+import '../../core/services/custom_audio_service.dart';
 
 /// Minimal player page shown as a full-screen overlay.
 class PlayerPage extends StatelessWidget {
@@ -17,10 +16,9 @@ class PlayerPage extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: StreamBuilder<MediaItem?>(
-        stream: (app_main.audioHandler as HelpToLearnAudioHandler).mediaItem,
-        builder: (ctx, snapshot) {
-          final item = snapshot.data;
+      body: ValueListenableBuilder<PlaybackInfo>(
+        valueListenable: app_main.audioService.playbackInfo,
+        builder: (ctx, info, _) {
           return Column(
             children: [
               const Spacer(),
@@ -48,7 +46,7 @@ class PlayerPage extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      item?.title ?? '加载中...',
+                      info.title.isNotEmpty ? info.title : '加载中...',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                           fontSize: 18, fontWeight: FontWeight.w600),
@@ -56,9 +54,9 @@ class PlayerPage extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    if (item?.artist != null && item!.artist!.isNotEmpty)
+                    if (info.subtitle.isNotEmpty)
                       Text(
-                        item.artist!,
+                        info.subtitle,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                             fontSize: 14, color: Colors.white54),
@@ -70,78 +68,58 @@ class PlayerPage extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               // Position slider
-              StreamBuilder<PlaybackState>(
-                stream: app_main.audioHandler.playbackState,
-                builder: (ctx, snapshot) {
-                  final state = snapshot.data;
-                  final position = state?.position ?? Duration.zero;
-                  final duration = (app_main.audioHandler as HelpToLearnAudioHandler)
-                      .mediaItem.value?.duration;
-
-                  return Column(
-                    children: [
-                      Slider(
-                        value: duration != null && duration.inMilliseconds > 0
-                            ? (position.inMilliseconds /
-                                    duration.inMilliseconds)
-                                .clamp(0.0, 1.0)
-                            : 0.0,
-                        onChanged: duration != null
-                            ? (v) {
-                                final target = Duration(
-                                    milliseconds:
-                                        (v * duration.inMilliseconds).round());
-                                app_main.audioHandler.seek(target);
-                              }
-                            : null,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 28),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(_formatDuration(position),
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.white54)),
-                            Text(
-                                duration != null
-                                    ? _formatDuration(duration)
-                                    : '--:--',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.white54)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
+              Column(
+                children: [
+                  Slider(
+                    value: info.duration != null && info.duration!.inMilliseconds > 0
+                        ? (info.position.inMilliseconds / info.duration!.inMilliseconds)
+                            .clamp(0.0, 1.0)
+                        : 0.0,
+                    onChanged: info.duration != null
+                        ? (v) {
+                            final target = Duration(
+                                milliseconds:
+                                    (v * info.duration!.inMilliseconds).round());
+                            app_main.audioService.seek(target);
+                          }
+                        : null,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_formatDuration(info.position),
+                            style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                        Text(
+                            info.duration != null
+                                ? _formatDuration(info.duration!)
+                                : '--:--',
+                            style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               // Controls row
-              StreamBuilder<PlaybackState>(
-                stream: app_main.audioHandler.playbackState,
-                builder: (ctx, snapshot) {
-                  final playing = snapshot.data?.playing ?? false;
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        iconSize: 32,
-                        icon: const Icon(Icons.skip_previous),
-                        onPressed: () =>
-                            app_main.audioHandler.skipToPrevious(),
-                      ),
-                      const SizedBox(width: 8),
-                      _BigPlayButton(playing: playing),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        iconSize: 32,
-                        icon: const Icon(Icons.skip_next),
-                        onPressed: () => app_main.audioHandler.skipToNext(),
-                      ),
-                    ],
-                  );
-                },
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    iconSize: 32,
+                    icon: const Icon(Icons.skip_previous),
+                    onPressed: () => app_main.audioService.seek(Duration.zero),
+                  ),
+                  const SizedBox(width: 8),
+                  _BigPlayButton(playing: info.playing),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    iconSize: 32,
+                    icon: const Icon(Icons.skip_next),
+                    onPressed: () {},
+                  ),
+                ],
               ),
               const Spacer(),
             ],
@@ -167,9 +145,9 @@ class _BigPlayButton extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         if (playing) {
-          app_main.audioHandler.pause();
+          app_main.audioService.pause();
         } else {
-          app_main.audioHandler.play();
+          app_main.audioService.play();
         }
       },
       child: AnimatedContainer(

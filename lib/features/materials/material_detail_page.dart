@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/api/materials_api.dart';
@@ -11,14 +10,14 @@ import '../../core/models/material.dart';
 import '../../core/models/segment.dart';
 import '../../core/services/anki_service.dart';
 import '../../core/services/cache_service.dart';
-import '../../core/services/audio_handler.dart';
 import 'dart:async';
 import '../../core/logging/app_logger.dart';
 import '../../main.dart' as app_main;
 
 class MaterialDetailPage extends ConsumerStatefulWidget {
   final int materialId;
-  const MaterialDetailPage({super.key, required this.materialId});
+  final bool autoPlay;
+  const MaterialDetailPage({super.key, required this.materialId, this.autoPlay = false});
 
   @override
   ConsumerState<MaterialDetailPage> createState() =>
@@ -34,9 +33,13 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
   bool _isPlayingSelected = false;
   int? _playingIndex;
   bool _pushingAll = false;
+  final _scrollController = ScrollController();
+  final Map<int, GlobalKey> _itemKeys = {};
+  bool _userDragging = false;
+  int? _pendingScrollIndex;
+  bool _wasPlaying = false;
 
-  StreamSubscription? _mediaItemSub;
-  StreamSubscription? _playbackStateSub;
+  VoidCallback? _playbackListener;
 
   @override
   void initState() {
@@ -44,25 +47,43 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     _load();
     AppLogger.info('MaterialDetailPage: id=${widget.materialId}',
         tag: 'MaterialDetail');
-        
-    final handler = app_main.audioHandler as HelpToLearnAudioHandler;
-    _mediaItemSub = handler.mediaItem.listen((item) {
-      if (item != null) {
-        final index = _segments.indexWhere((s) => s.id.toString() == item.id);
+
+    final service = app_main.audioService;
+    _playbackListener = () {
+      if (!mounted) return;
+      // Only rebuild when something visible actually changes.
+      // Avoids rebuilds on every position update which cause scroll jank.
+      bool needsRebuild = false;
+      final segId = service.currentSegmentId;
+      if (segId != null) {
+        final index = _segments.indexWhere((s) => s.id.toString() == segId);
         if (index != -1 && index != _playingIndex) {
-          if (mounted) setState(() => _playingIndex = index);
+          _playingIndex = index;
+          needsRebuild = true;
+          _scrollToIndex(index);
         }
       }
-    });
-    _playbackStateSub = handler.playbackState.listen((state) {
-      if (mounted) setState(() {});
-    });
+      final nowPlaying = service.playbackInfo.value.playing;
+      if (nowPlaying != _wasPlaying) {
+        _wasPlaying = nowPlaying;
+        needsRebuild = true;
+      }
+      if (needsRebuild) setState(() {});
+    };
+    service.playbackInfo.addListener(_playbackListener!);
+
+    // Wire notification "Push to Anki" button
+    service.onRequestAnkiPush = () => _pushCurrentToAnki();
   }
 
   @override
   void dispose() {
-    _mediaItemSub?.cancel();
-    _playbackStateSub?.cancel();
+    // Unregister notification Anki callback
+    app_main.audioService.onRequestAnkiPush = null;
+    if (_playbackListener != null) {
+      app_main.audioService.playbackInfo.removeListener(_playbackListener!);
+    }
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -75,6 +96,8 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
       final mat = await materialsApi.get(widget.materialId);
       final segsRaw = await materialsApi.getSegmentsRaw(widget.materialId);
       final segs = segsRaw.map(SegmentModel.fromJson).toList();
+      // Update material index for notification navigation
+      app_main.audioService.setCurrentMaterialIndex(widget.materialId);
       setState(() {
         _material = mat;
         _segments = segs;
@@ -82,6 +105,13 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
       });
       // Pre-cache all audio in background
       CacheService.instance.preCacheMaterial(segs.map((s) => s.id).toList());
+
+      // Auto-play if navigated from notification material change
+      if (widget.autoPlay && segs.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _startSequential(0);
+        });
+      }
     } catch (e, st) {
       AppLogger.error('Failed to load material detail',
           tag: 'MaterialDetail', error: e, stackTrace: st);
@@ -92,34 +122,71 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     }
   }
 
+  void _scrollToIndex(int index) {
+    if (!_scrollController.hasClients) return;
+    if (_userDragging) {
+      _pendingScrollIndex = index;
+      return;
+    }
+    final key = _itemKeys[index];
+    if (key?.currentContext != null) {
+      // Item is already built — accurate positioning.
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        alignment: 0.1,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      // Item is off-screen and not yet built. Scroll to an estimated
+      // offset, then fine-tune once the item appears in the tree.
+      final estimatedOffset = index * 100.0;
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      _scrollController.animateTo(
+        estimatedOffset.clamp(0.0, maxScroll),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      ).then((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final key2 = _itemKeys[index];
+        if (key2?.currentContext != null) {
+          Scrollable.ensureVisible(
+            key2!.currentContext!,
+            alignment: 0.1,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
+  }
+
   // ─── Playback ─────────────────────────────────────────────────────────────
 
   Future<void> _startSequential(int fromIndex, {bool isSelectedMode = false}) async {
-    final handler = app_main.audioHandler as HelpToLearnAudioHandler;
+    final service = app_main.audioService;
     setState(() {
       _isPlayingAll = !isSelectedMode;
       _isPlayingSelected = isSelectedMode;
       _playingIndex = fromIndex;
     });
-    final ok = await handler.loadMaterial(
+    final ok = await service.loadMaterial(
       segments: _segments,
-      materialItem: MediaItem(
-        id: widget.materialId.toString(),
-        title: _material?.title ?? '未知素材',
-      ),
+      materialTitle: _material?.title ?? '未知素材',
+      materialId: widget.materialId,
       startIndex: fromIndex,
       sequential: true,
     );
-    if (ok) await handler.play();
+    if (ok) await service.play();
   }
 
   Future<void> _playOrPauseSingle(int index) async {
-    final handler = app_main.audioHandler as HelpToLearnAudioHandler;
+    final service = app_main.audioService;
     if (_playingIndex == index) {
-      if (handler.playbackState.value.playing) {
-        await handler.pause();
+      if (service.playbackInfo.value.playing) {
+        await service.pause();
       } else {
-        await handler.play();
+        await service.play();
       }
       return;
     }
@@ -128,24 +195,34 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
       _isPlayingSelected = false;
       _playingIndex = index;
     });
-    final ok = await handler.loadMaterial(
+    final ok = await service.loadMaterial(
       segments: _segments,
-      materialItem: MediaItem(
-        id: widget.materialId.toString(),
-        title: _material?.title ?? '未知素材',
-      ),
+      materialTitle: _material?.title ?? '未知素材',
+      materialId: widget.materialId,
       startIndex: index,
       sequential: false,
     );
-    if (ok) await handler.play();
+    if (ok) await service.play();
   }
 
   Future<void> _pauseOrStop() async {
-    final handler = app_main.audioHandler as HelpToLearnAudioHandler;
-    await handler.pause();
+    await app_main.audioService.pause();
   }
 
   // ─── Anki push ────────────────────────────────────────────────────────────
+
+  Future<void> _pushCurrentToAnki() async {
+    final segment = app_main.audioService.currentSegment;
+    if (segment == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⚠️ 无当前片段'), duration: Duration(seconds: 2)),
+        );
+      }
+      return;
+    }
+    await _pushSingleToAnki(segment);
+  }
 
   Future<void> _pushSingleToAnki(SegmentModel segment) async {
     final user = await usersApi.getMe();
@@ -303,8 +380,8 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
           // Sequential play controls
           _PlayControls(
             segmentCount: _segments.length,
-            isPlayingAll: _isPlayingAll && app_main.audioHandler.playbackState.value.playing,
-            isPlayingSelected: _isPlayingSelected && app_main.audioHandler.playbackState.value.playing,
+            isPlayingAll: _isPlayingAll && app_main.audioService.playbackInfo.value.playing,
+            isPlayingSelected: _isPlayingSelected && app_main.audioService.playbackInfo.value.playing,
             onPlayAll: () => _startSequential(0, isSelectedMode: false),
             onPlaySelected: _playingIndex != null ? () => _startSequential(_playingIndex!, isSelectedMode: true) : null,
             onPause: _pauseOrStop,
@@ -312,22 +389,45 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
 
           // Segment list
           Expanded(
-            child: ListView.builder(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  _userDragging = true;
+                } else if (notification is ScrollEndNotification) {
+                  _userDragging = false;
+                  if (_pendingScrollIndex != null) {
+                    final idx = _pendingScrollIndex!;
+                    _pendingScrollIndex = null;
+                    _scrollToIndex(idx);
+                  }
+                }
+                return false;
+              },
+              child: ListView.builder(
+              controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
               itemCount: _segments.length,
               itemBuilder: (ctx, i) {
                 final seg = _segments[i];
-                return _SegmentCard(
-                  segment: seg,
-                  index: i,
-                  isPlaying: _playingIndex == i,
-                  isAudioPlaying: _playingIndex == i && (app_main.audioHandler.playbackState.value.playing),
-                  onPlayOrPause: () => _playOrPauseSingle(i),
-                  onSelect: () => setState(() => _playingIndex = i),
-                  onPushAnki: () => _pushSingleToAnki(seg),
-                  onLongPressShare: () => _shareSegment(seg, i),
+                _itemKeys.putIfAbsent(i, () => GlobalKey());
+                final segIdStr = seg.id.toString();
+                final isCurrentSegment = app_main.audioService.currentSegmentId == segIdStr;
+                return Container(
+                  key: _itemKeys[i],
+                  child: _SegmentCard(
+                    segment: seg,
+                    index: i,
+                    isPlaying: _playingIndex == i,
+                    isAudioPlaying: isCurrentSegment && app_main.audioService.playbackInfo.value.playing,
+                    onPlayOrPause: () => _playOrPauseSingle(i),
+                    onSelect: () => setState(() => _playingIndex = i),
+                    onPushAnki: () => _pushSingleToAnki(seg),
+                    onLongPressShare: () => _shareSegment(seg, i),
+                  ),
                 );
               },
+            ),
             ),
           ),
         ],

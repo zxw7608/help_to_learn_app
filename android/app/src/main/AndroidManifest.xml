@@ -56,24 +56,12 @@
 
         </activity>
 
-        <!-- Background audio service (required by audio_service) -->
+        <!-- Custom audio foreground service with RemoteViews notification -->
         <service
-            android:name="com.ryanheise.audioservice.AudioService"
-            android:exported="true"
+            android:name=".AudioForegroundService"
+            android:exported="false"
             android:stopWithTask="true"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService"/>
-            </intent-filter>
-        </service>
-
-        <!-- Media button receiver for headphone controls -->
-        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON"/>
-            </intent-filter>
-        </receiver>
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- FileProvider for sharing media to AnkiDroid -->
         <provider

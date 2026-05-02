@@ -23,8 +23,9 @@ dependencies:
 
   # Audio Playback
   just_audio: ^0.9.39
-  audio_service: ^0.18.14
-  audio_session: ^0.1.25
+
+  # Permissions
+  permission_handler: ^11.3.1
 
   # AnkiDroid Integration (native Android API)
   flutter_ankidroid: ^0.8.1

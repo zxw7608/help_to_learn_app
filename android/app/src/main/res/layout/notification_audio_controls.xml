@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="4dp">
+
+    <!-- Title -->
+    <TextView
+        android:id="@+id/notifTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <!-- Subtitle -->
+    <TextView
+        android:id="@+id/notifSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/notifTitle"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="12sp"
+        android:layout_marginBottom="6dp" />
+
+    <!-- Button row -->
+    <LinearLayout
+        android:id="@+id/buttonRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/notifSubtitle"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <!-- Prev Material (big up) -->
+        <ImageView
+            android:id="@+id/btnPrevMaterial"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_material_prev"
+            android:contentDescription="上一个素材"
+            android:padding="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:alpha="1.0" />
+
+        <!-- Prev Segment (small up) -->
+        <ImageView
+            android:id="@+id/btnPrevSegment"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_segment_prev"
+            android:contentDescription="上一片段"
+            android:padding="6dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="12dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:alpha="0.7" />
+
+        <!-- Play/Pause (large) -->
+        <ImageView
+            android:id="@+id/btnPlayPause"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_notification"
+            android:contentDescription="播放/暂停"
+            android:padding="8dp"
+            android:layout_marginEnd="12dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+        <!-- Next Segment (small down) -->
+        <ImageView
+            android:id="@+id/btnNextSegment"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_segment_next"
+            android:contentDescription="下一片段"
+            android:padding="6dp"
+            android:layout_marginStart="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:alpha="0.7" />
+
+        <!-- Next Material (big down) -->
+        <ImageView
+            android:id="@+id/btnNextMaterial"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_material_next"
+            android:contentDescription="下一个素材"
+            android:padding="6dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="12dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:alpha="1.0" />
+
+        <!-- Anki push -->
+        <ImageView
+            android:id="@+id/btnAnki"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_anki_push"
+            android:contentDescription="加入Anki"
+            android:padding="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:alpha="0.6" />
+
+    </LinearLayout>
+</RelativeLayout>

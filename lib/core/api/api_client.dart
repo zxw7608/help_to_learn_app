@@ -122,14 +122,26 @@ class _AuthInterceptor extends Interceptor {
 // ─── Token Helpers ────────────────────────────────────────────────────────────
 
 class TokenStorage {
+  static bool _hasTokenSync = false;
+
+  /// Must be called before [runApp] to cache token status for sync redirect.
+  static Future<void> initSync() async {
+    _hasTokenSync = await hasToken();
+  }
+
+  /// Synchronous check — use only after [initSync] was called.
+  static bool get hasTokenSync => _hasTokenSync;
+
   static Future<void> saveTokens(
       {required String accessToken, required String refreshToken}) async {
+    _hasTokenSync = true;
     await _secureStorage.write(key: _kAccessTokenKey, value: accessToken);
     await _secureStorage.write(key: _kRefreshTokenKey, value: refreshToken);
     AppLogger.debug('Tokens saved', tag: 'TokenStorage');
   }
 
   static Future<void> clear() async {
+    _hasTokenSync = false;
     await _secureStorage.delete(key: _kAccessTokenKey);
     await _secureStorage.delete(key: _kRefreshTokenKey);
     AppLogger.info('Tokens cleared (logout)', tag: 'TokenStorage');

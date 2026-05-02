@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../logging/app_logger.dart';
+import '../models/playlist.dart';
 import '../models/segment.dart';
 import 'cache_service.dart';
 
@@ -19,6 +21,14 @@ class PlaybackInfo {
   final bool hasPrevSegment;
   final bool hasNextSegment;
 
+  // Playlist fields
+  final String playlistInfo;
+  final String materialTitle;
+  final int currentMaterialId;
+  final String playModeLabel;
+  final bool hasPrevPlaylist;
+  final bool hasNextPlaylist;
+
   const PlaybackInfo({
     this.playing = false,
     this.title = '',
@@ -29,6 +39,12 @@ class PlaybackInfo {
     this.hasNextMaterial = false,
     this.hasPrevSegment = false,
     this.hasNextSegment = false,
+    this.playlistInfo = '',
+    this.materialTitle = '',
+    this.currentMaterialId = 0,
+    this.playModeLabel = '',
+    this.hasPrevPlaylist = false,
+    this.hasNextPlaylist = false,
   });
 }
 
@@ -37,13 +53,20 @@ class CustomAudioService {
 
   late AudioPlayer _player;
   List<SegmentModel> _segments = [];
-  List<MapEntry<int, String>> _materials = []; // id -> title
   int _currentSegmentIndex = 0;
-  int _currentMaterialIndex = -1;
   bool _sequentialMode = false;
   SegmentModel? _lastAttemptedSegment;
   bool _isRecovering = false;
   bool _foregroundStarted = false;
+  SegmentPlayMode _segmentPlayMode = SegmentPlayMode.sequential;
+
+  // Playlist info (set by PlaylistManager)
+  String _playlistLabel = '';
+  String _currentMaterialTitle = '';
+  int _currentMaterialId = 0;
+  bool _hasPrevPlaylist = false;
+  bool _hasNextPlaylist = false;
+  String _modeLabel = '';
 
   // Observable state for UI
   final _playbackInfo = ValueNotifier<PlaybackInfo>(const PlaybackInfo());
@@ -55,25 +78,48 @@ class CustomAudioService {
       _segments.isNotEmpty && _currentSegmentIndex < _segments.length
           ? _segments[_currentSegmentIndex]
           : null;
-  String get currentMaterialId =>
-      _currentMaterialIndex >= 0 && _currentMaterialIndex < _materials.length
-          ? _materials[_currentMaterialIndex].key.toString()
-          : '';
 
   // Callbacks
-  void Function(int materialIndex)? onMaterialChanged;
+  void Function()? onMaterialFinished;
+  void Function(bool next)? onPlaylistNav;
+  void Function()? onModeCycle;
   void Function()? onRequestAnkiPush;
 
   CustomAudioService() {
     _player = _createPlayer();
-    _player.playbackEventStream.listen(_onPlaybackEvent, onError: _onStreamError);
-    _player.playerStateStream.listen(_onPlayerStateChanged, onError: _onStreamError);
+    _player.playbackEventStream.listen(_onPlaybackEvent,
+        onError: _onStreamError);
+    _player.playerStateStream.listen(_onPlayerStateChanged,
+        onError: _onStreamError);
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
   AudioPlayer _createPlayer() => AudioPlayer();
 
-  // ─── MethodChannel Handler (Android → Flutter) ──────────────────────────────
+  // ─── Playlist Info Update ─────────────────────────────────────────────────
+
+  void setSegmentPlayMode(SegmentPlayMode mode) {
+    _segmentPlayMode = mode;
+  }
+
+  void updatePlaylistInfo({
+    required String playlistLabel,
+    required String materialTitle,
+    required int materialId,
+    required bool hasPrevPlaylist,
+    required bool hasNextPlaylist,
+    required String modeLabel,
+  }) {
+    _playlistLabel = playlistLabel;
+    _currentMaterialTitle = materialTitle;
+    _currentMaterialId = materialId;
+    _hasPrevPlaylist = hasPrevPlaylist;
+    _hasNextPlaylist = hasNextPlaylist;
+    _modeLabel = modeLabel;
+    _sendNotification();
+  }
+
+  // ─── MethodChannel Handler (Android → Flutter) ────────────────────────────
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
@@ -102,9 +148,19 @@ class CustomAudioService {
       case 'next_segment':
         _nextSegment();
       case 'prev_material':
-        _previousMaterial();
+        if (onPlaylistNav != null) {
+          onPlaylistNav!(false);
+        } else {
+          // Legacy: no-op when not in playlist mode
+        }
       case 'next_material':
-        _nextMaterial();
+        if (onPlaylistNav != null) {
+          onPlaylistNav!(true);
+        } else {
+          // Legacy: no-op
+        }
+      case 'play_mode':
+        onModeCycle?.call();
       case 'anki':
         onRequestAnkiPush?.call();
     }
@@ -123,7 +179,7 @@ class CustomAudioService {
     }
   }
 
-  // ─── Public API ─────────────────────────────────────────────────────────────
+  // ─── Public API ───────────────────────────────────────────────────────────
 
   Future<bool> loadMaterial({
     required List<SegmentModel> segments,
@@ -135,25 +191,14 @@ class CustomAudioService {
     _segments = segments;
     _currentSegmentIndex = startIndex;
     _sequentialMode = sequential;
-    // Find and set current material index
-    _currentMaterialIndex =
-        _materials.indexWhere((e) => e.key == materialId);
-    if (_currentMaterialIndex == -1) _currentMaterialIndex = 0;
+    _currentMaterialTitle = materialTitle;
+    _currentMaterialId = materialId;
 
     final ok = await _loadCurrentSegment();
     if (!ok) {
       AppLogger.warning('Failed to load initial segment', tag: 'AudioService');
     }
     return ok;
-  }
-
-  void setMaterialsList(List<MapEntry<int, String>> materials, int currentId) {
-    _materials = materials;
-    _currentMaterialIndex = _materials.indexWhere((e) => e.key == currentId);
-  }
-
-  void setCurrentMaterialIndex(int materialId) {
-    _currentMaterialIndex = _materials.indexWhere((e) => e.key == materialId);
   }
 
   Future<void> playSegment(int index) async {
@@ -176,7 +221,8 @@ class CustomAudioService {
       await _player.play();
       await _sendNotification();
     } catch (e, st) {
-      AppLogger.error('Error during play()', tag: 'AudioService', error: e, stackTrace: st);
+      AppLogger.error('Error during play()', tag: 'AudioService',
+          error: e, stackTrace: st);
     }
   }
 
@@ -197,6 +243,14 @@ class CustomAudioService {
     await _sendNotification();
   }
 
+  Future<void> nextSegment() async {
+    await _nextSegment();
+  }
+
+  Future<void> previousSegment() async {
+    await _previousSegment();
+  }
+
   Future<void> performCleanup() async {
     _foregroundStarted = false;
     AppLogger.info('performCleanup', tag: 'AudioService');
@@ -206,7 +260,7 @@ class CustomAudioService {
     try { await _channel.invokeMethod('stopForeground'); } catch (_) {}
   }
 
-  // ─── Internal ────────────────────────────────────────────────────────────────
+  // ─── Internal ─────────────────────────────────────────────────────────────
 
   Future<bool> _loadCurrentSegment() async {
     if (_segments.isEmpty) return false;
@@ -255,51 +309,93 @@ class CustomAudioService {
   }
 
   Future<void> _autoAdvance() async {
-    if (_currentSegmentIndex < _segments.length - 1) {
-      _currentSegmentIndex++;
-      final ok = await _loadCurrentSegment();
-      if (ok) await play();
-    } else {
-      AppLogger.info('Reached end of material', tag: 'AudioService');
-      await stop();
+    switch (_segmentPlayMode) {
+      case SegmentPlayMode.sequential:
+        if (_currentSegmentIndex < _segments.length - 1) {
+          _currentSegmentIndex++;
+        } else if (onMaterialFinished != null) {
+          onMaterialFinished!();
+          return;
+        } else {
+          AppLogger.info('Reached end of material', tag: 'AudioService');
+          await stop();
+          return;
+        }
+        break;
+      case SegmentPlayMode.random:
+        if (_segments.length > 1) {
+          final rng = Random();
+          int next;
+          do {
+            next = rng.nextInt(_segments.length);
+          } while (next == _currentSegmentIndex && _segments.length > 1);
+          _currentSegmentIndex = next;
+        }
+        break;
+      case SegmentPlayMode.singleLoop:
+        break;
     }
+    final ok = await _loadCurrentSegment();
+    if (ok) await play();
   }
 
   Future<void> _nextSegment() async {
-    if (_currentSegmentIndex < _segments.length - 1) {
-      _currentSegmentIndex++;
-      final ok = await _loadCurrentSegment();
-      if (ok) await play();
+    // Apply segment mode for next-segment logic
+    switch (_segmentPlayMode) {
+      case SegmentPlayMode.sequential:
+        if (_currentSegmentIndex < _segments.length - 1) {
+          _currentSegmentIndex++;
+        } else if (onMaterialFinished != null) {
+          onMaterialFinished!();
+          return;
+        } else {
+          return; // at last segment, no playlist
+        }
+        break;
+      case SegmentPlayMode.random:
+        if (_segments.length > 1) {
+          final rng = Random();
+          int next;
+          do {
+            next = rng.nextInt(_segments.length);
+          } while (next == _currentSegmentIndex && _segments.length > 1);
+          _currentSegmentIndex = next;
+        }
+        break;
+      case SegmentPlayMode.singleLoop:
+        // Stay on same segment, just seek to beginning
+        break;
     }
+    final ok = await _loadCurrentSegment();
+    if (ok) await play();
   }
 
   Future<void> _previousSegment() async {
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
-    } else if (_currentSegmentIndex > 0) {
-      _currentSegmentIndex--;
-      final ok = await _loadCurrentSegment();
-      if (ok) await play();
+    } else if (_segmentPlayMode == SegmentPlayMode.random) {
+      // Random: pick a random segment
+      if (_segments.length > 1) {
+        final rng = Random();
+        int prev;
+        do {
+          prev = rng.nextInt(_segments.length);
+        } while (prev == _currentSegmentIndex && _segments.length > 1);
+        _currentSegmentIndex = prev;
+      }
+    } else {
+      // Sequential or single loop: go to previous
+      if (_currentSegmentIndex > 0) {
+        _currentSegmentIndex--;
+      } else if (onPlaylistNav != null) {
+        // At first segment — go to previous material
+        onPlaylistNav!(false);
+        return;
+      }
     }
+    final ok = await _loadCurrentSegment();
+    if (ok) await play();
     await _sendNotification();
-  }
-
-  Future<void> _nextMaterial() async {
-    if (_currentMaterialIndex < _materials.length - 1) {
-      _currentMaterialIndex++;
-      AppLogger.info('Moving to next material index=$_currentMaterialIndex',
-          tag: 'AudioService');
-      onMaterialChanged?.call(_currentMaterialIndex);
-    }
-  }
-
-  Future<void> _previousMaterial() async {
-    if (_currentMaterialIndex > 0) {
-      _currentMaterialIndex--;
-      AppLogger.info('Moving to prev material index=$_currentMaterialIndex',
-          tag: 'AudioService');
-      onMaterialChanged?.call(_currentMaterialIndex);
-    }
   }
 
   void _onPlaybackEvent(PlaybackEvent event) {
@@ -327,11 +423,18 @@ class CustomAudioService {
       subtitle: subtitle,
       duration: duration,
       position: _player.position,
-      hasPrevMaterial: _currentMaterialIndex > 0,
-      hasNextMaterial: _currentMaterialIndex < _materials.length - 1,
+      hasPrevMaterial: _hasPrevPlaylist,
+      hasNextMaterial: _hasNextPlaylist,
       hasPrevSegment: _currentSegmentIndex > 0 ||
           _player.position.inSeconds > 3,
-      hasNextSegment: _currentSegmentIndex < _segments.length - 1,
+      hasNextSegment: _currentSegmentIndex < _segments.length - 1 ||
+          onMaterialFinished != null,
+      playlistInfo: _playlistLabel,
+      materialTitle: _currentMaterialTitle,
+      currentMaterialId: _currentMaterialId,
+      playModeLabel: _modeLabel,
+      hasPrevPlaylist: _hasPrevPlaylist,
+      hasNextPlaylist: _hasNextPlaylist,
     );
     final payload = <String, dynamic>{
       'title': title,
@@ -343,6 +446,8 @@ class CustomAudioService {
       'hasNextMaterial': info.hasNextMaterial,
       'hasPrevSegment': info.hasPrevSegment,
       'hasNextSegment': info.hasNextSegment,
+      'playlistInfo': _playlistLabel,
+      'modeLabel': _modeLabel,
     };
     _playbackInfo.value = info;
 
@@ -355,14 +460,16 @@ class CustomAudioService {
   }
 
   void _onStreamError(Object e, StackTrace st) async {
-    AppLogger.error('Audio stream error: $e', tag: 'AudioService', error: e, stackTrace: st);
+    AppLogger.error('Audio stream error: $e', tag: 'AudioService',
+        error: e, stackTrace: st);
     if (_isRecovering) return;
     final errStr = e.toString();
     if (errStr.contains('PlatformException(2') ||
         errStr.contains('Unexpected runtime error') ||
         errStr.contains('IllegalStateException') ||
         errStr.contains('ERROR_CODE_')) {
-      AppLogger.warning('Detected ExoPlayer crash! Attempting recovery...', tag: 'AudioService');
+      AppLogger.warning('Detected ExoPlayer crash! Attempting recovery...',
+          tag: 'AudioService');
       _isRecovering = true;
       try {
         await Future.delayed(const Duration(milliseconds: 300));
@@ -371,8 +478,10 @@ class CustomAudioService {
           await _player.dispose();
         } catch (_) {}
         _player = _createPlayer();
-        _player.playbackEventStream.listen(_onPlaybackEvent, onError: _onStreamError);
-        _player.playerStateStream.listen(_onPlayerStateChanged, onError: _onStreamError);
+        _player.playbackEventStream.listen(_onPlaybackEvent,
+            onError: _onStreamError);
+        _player.playerStateStream.listen(_onPlayerStateChanged,
+            onError: _onStreamError);
 
         final seg = _lastAttemptedSegment;
         if (seg != null) {

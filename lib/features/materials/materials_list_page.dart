@@ -7,8 +7,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../core/api/materials_api.dart';
 import '../../core/models/material.dart';
 import '../../core/logging/app_logger.dart';
-import '../../core/router/app_router.dart';
-import '../../main.dart' as app_main;
+import '../../core/services/playlist_manager.dart';
 
 class MaterialsListPage extends ConsumerStatefulWidget {
   const MaterialsListPage({super.key});
@@ -27,6 +26,10 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
   int _total = 0;
   String? _error;
 
+  // Selection
+  bool _selectionMode = false;
+  final _selectedIds = <int>{};
+
   String? _lastClipboardText;
 
   @override
@@ -34,7 +37,6 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
-    _setupMaterialNavigation();
     _loadMaterials();
     AppLogger.info('MaterialsListPage opened', tag: 'MaterialsList');
   }
@@ -62,7 +64,6 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
       if (text == null || text.isEmpty) return;
       if (text == _lastClipboardText) return;
 
-      // Check if it looks like a URL or substantial text
       if (_isUrl(text) || text.length > 30) {
         _lastClipboardText = text;
         if (mounted) _showClipboardDialog(text);
@@ -95,7 +96,8 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
                 const Icon(Icons.content_paste, size: 20),
                 const SizedBox(width: 8),
                 const Text('检测到剪切板内容',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
             const SizedBox(height: 12),
@@ -106,7 +108,8 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(preview,
-                  style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                  style:
+                      const TextStyle(fontSize: 13, color: Colors.white70)),
             ),
             const SizedBox(height: 16),
             Row(
@@ -152,13 +155,12 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     try {
       final result = await materialsApi.list(page: _page, size: 20);
       setState(() {
-        _materials = refresh ? result.items : [..._materials, ...result.items];
+        _materials =
+            refresh ? result.items : [..._materials, ...result.items];
         _total = result.total;
         _loading = false;
         _loadingMore = false;
       });
-      // Sync materials to audio handler for notification navigation
-      _syncMaterialsToAudioHandler();
       AppLogger.debug('Loaded ${result.items.length} materials (page $_page)',
           tag: 'MaterialsList');
     } catch (e, st) {
@@ -188,36 +190,58 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     _loadMaterials();
   }
 
-  void _setupMaterialNavigation() {
-    app_main.audioService.onMaterialChanged = (index) {
-      if (index >= 0 && index < _materials.length) {
-        final context = rootNavigatorKey.currentContext;
-        if (context != null) {
-          context.pushNamed(
-            'material-detail',
-            pathParameters: {'id': _materials[index].id.toString()},
-            queryParameters: {'autoPlay': 'true'},
-          );
+  // ─── Selection ────────────────────────────────────────────────────────────
+
+  void _enterSelectionMode(int materialId) {
+    setState(() {
+      _selectionMode = true;
+      _selectedIds.add(materialId);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelection(int materialId) {
+    setState(() {
+      if (_selectedIds.contains(materialId)) {
+        _selectedIds.remove(materialId);
+        if (_selectedIds.isEmpty) {
+          _selectionMode = false;
         }
+      } else {
+        _selectedIds.add(materialId);
       }
-    };
+    });
   }
 
-  void _syncMaterialsToAudioHandler() {
-    app_main.audioService.setMaterialsList(
-      _materials
-          .map((m) => MapEntry(m.id, m.title))
-          .toList(),
-      _currentMaterialId(),
-    );
-  }
-
-  int _currentMaterialId() {
-    final currentId = app_main.audioService.currentMaterialId;
-    if (currentId.isNotEmpty) {
-      return int.tryParse(currentId) ?? 0;
+  Future<void> _addToPlaylist({bool playNow = false}) async {
+    if (_selectedIds.isEmpty) return;
+    final ids = _selectedIds.toList();
+    _exitSelectionMode();
+    await ref
+        .read(playlistManagerProvider.notifier)
+        .addMaterials(ids, playNow: playNow);
+    if (mounted) {
+      final msg = playNow ? '已添加到播放列表并开始播放' : '已添加到播放列表';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          duration: const Duration(seconds: 2),
+          action: SnackBarAction(
+            label: '查看',
+            onPressed: () => context.go('/playlist'),
+          ),
+        ),
+      );
+      if (playNow) {
+        context.pushNamed('player');
+      }
     }
-    return 0;
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -226,25 +250,84 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('素材库'),
-            if (_total > 0)
-              Text('共 $_total 个素材',
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.white54)),
-          ],
-        ),
+        title: _selectionMode
+            ? Text('已选 ${_selectedIds.length} 个')
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('素材库'),
+                  if (_total > 0)
+                    Text('共 $_total 个素材',
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white54)),
+                ],
+              ),
+        leading: _selectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _exitSelectionMode,
+              )
+            : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            tooltip: '添加素材',
-            onPressed: () => context.pushNamed('add-material'),
-          ),
+          if (_selectionMode)
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              tooltip: '全选',
+              onPressed: () {
+                setState(() {
+                  if (_selectedIds.length == _materials.length) {
+                    _selectedIds.clear();
+                    _selectionMode = false;
+                  } else {
+                    _selectedIds.addAll(_materials.map((m) => m.id));
+                  }
+                });
+              },
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              tooltip: '添加素材',
+              onPressed: () => context.pushNamed('add-material'),
+            ),
         ],
       ),
       body: _buildBody(),
+      bottomNavigationBar: _selectionMode && _selectedIds.isNotEmpty
+          ? _buildSelectionBar()
+          : null,
+    );
+  }
+
+  Widget _buildSelectionBar() {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E1E2E),
+          border:
+              Border(top: BorderSide(color: Color(0xFF2A2A3E), width: 1)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _addToPlaylist(playNow: false),
+                icon: const Icon(Icons.playlist_add, size: 18),
+                label: const Text('添加到播放列表'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _addToPlaylist(playNow: true),
+                icon: const Icon(Icons.play_arrow, size: 18),
+                label: const Text('立即播放'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -258,7 +341,7 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
           ? _buildEmpty()
           : ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
               itemCount: _materials.length + (_loadingMore ? 1 : 0),
               itemBuilder: (ctx, i) {
                 if (i == _materials.length) {
@@ -267,10 +350,25 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
+                final mat = _materials[i];
+                final isSelected = _selectedIds.contains(mat.id);
                 return _MaterialCard(
-                  material: _materials[i],
-                  onTap: () => context.pushNamed('material-detail',
-                      pathParameters: {'id': _materials[i].id.toString()}),
+                  material: mat,
+                  selectionMode: _selectionMode,
+                  isSelected: isSelected,
+                  onTap: () {
+                    if (_selectionMode) {
+                      _toggleSelection(mat.id);
+                    } else {
+                      context.pushNamed('material-detail',
+                          pathParameters: {'id': mat.id.toString()});
+                    }
+                  },
+                  onLongPress: () {
+                    if (!_selectionMode) {
+                      _enterSelectionMode(mat.id);
+                    }
+                  },
                 );
               },
             ),
@@ -338,9 +436,18 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
 
 class _MaterialCard extends StatelessWidget {
   final MaterialModel material;
+  final bool selectionMode;
+  final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _MaterialCard({required this.material, required this.onTap});
+  const _MaterialCard({
+    required this.material,
+    required this.selectionMode,
+    required this.isSelected,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -348,15 +455,42 @@ class _MaterialCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isSelected ? cs.primary : const Color(0xFF2A2A3E),
+          width: isSelected ? 2 : 1,
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Status indicator
-              _statusIcon(),
+              // Selection checkbox or status icon
+              if (selectionMode)
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? cs.primary.withOpacity(0.2)
+                        : Colors.white10,
+                    borderRadius: BorderRadius.circular(12),
+                    border: isSelected
+                        ? Border.all(color: cs.primary, width: 2)
+                        : null,
+                  ),
+                  child:
+                      Icon(isSelected ? Icons.check : Icons.circle_outlined,
+                          color: isSelected ? cs.primary : Colors.white38,
+                          size: 22),
+                )
+              else
+                _statusIcon(),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -388,7 +522,8 @@ class _MaterialCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.white30),
+              if (!selectionMode)
+                const Icon(Icons.chevron_right, color: Colors.white30),
             ],
           ),
         ),

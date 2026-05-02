@@ -11,6 +11,7 @@ import 'app.dart';
 import 'core/logging/app_logger.dart';
 import 'core/api/api_client.dart';
 import 'core/services/custom_audio_service.dart';
+import 'core/services/playlist_manager.dart';
 
 late CustomAudioService audioService;
 
@@ -19,6 +20,7 @@ Future<void> main() async {
 
   await AppLogger.init();
   await ApiClient.initialize();
+  await TokenStorage.initSync();
 
   // Global Flutter error handler
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -53,6 +55,7 @@ Future<void> main() async {
 
   // Initialize custom audio service
   audioService = CustomAudioService();
+  PlaylistManager.setAudioService(audioService);
 
   // Listen for native Android lifecycle signals
   const lifecycleChannel = MethodChannel('app_lifecycle');

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dart analyze *)",
       "Bash(flutter pub *)",
-      "Bash(where flutter *)"
+      "Bash(where flutter *)",
+      "Bash(flutter analyze *)"
     ]
   }
 }

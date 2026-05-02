@@ -10,6 +10,7 @@ import '../../features/materials/add_material_page.dart';
 import '../../features/settings/settings_page.dart';
 import '../../features/settings/log_viewer_page.dart';
 import '../../features/player/player_page.dart';
+import '../../features/playlist/playlist_page.dart';
 import '../api/api_client.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -18,8 +19,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/materials',
-    redirect: (context, state) async {
-      final hasToken = await TokenStorage.hasToken();
+    redirect: (context, state) {
+      final hasToken = TokenStorage.hasTokenSync;
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
       if (!hasToken && !isAuthRoute) return '/auth/login';
       if (hasToken && isAuthRoute) return '/materials';
@@ -59,6 +60,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
           GoRoute(
+            path: '/playlist',
+            name: 'playlist',
+            builder: (context, state) => const PlaylistPage(),
+          ),
+          GoRoute(
             path: '/settings',
             name: 'settings',
             builder: (context, state) => const SettingsPage(),
@@ -87,6 +93,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'player',
         builder: (context, state) => const PlayerPage(),
       ),
+      GoRoute(
+        path: '/material/:id',
+        name: 'material-standalone',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return MaterialDetailPage(materialId: id);
+        },
+      ),
     ],
   );
 });
@@ -110,7 +124,14 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final currentIndex = location.startsWith('/settings') ? 1 : 0;
+    int currentIndex;
+    if (location.startsWith('/playlist')) {
+      currentIndex = 1;
+    } else if (location.startsWith('/settings')) {
+      currentIndex = 2;
+    } else {
+      currentIndex = 0;
+    }
 
     return BottomNavigationBar(
       currentIndex: currentIndex,
@@ -120,6 +141,9 @@ class _BottomNav extends StatelessWidget {
             context.go('/materials');
             break;
           case 1:
+            context.go('/playlist');
+            break;
+          case 2:
             context.go('/settings');
             break;
         }
@@ -129,6 +153,11 @@ class _BottomNav extends StatelessWidget {
           icon: Icon(Icons.library_books_outlined),
           activeIcon: Icon(Icons.library_books),
           label: '素材库',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.queue_music_outlined),
+          activeIcon: Icon(Icons.queue_music),
+          label: '播放列表',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.settings_outlined),

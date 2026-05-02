@@ -26,7 +26,7 @@ class AudioForegroundService : Service() {
         private const val REQ_NEXT_SEGMENT = 2
         private const val REQ_PREV_MATERIAL = 3
         private const val REQ_NEXT_MATERIAL = 4
-        private const val REQ_ANKI = 5
+        private const val REQ_PLAY_MODE = 5
         private const val REQ_CONTENT = 100
 
         // Intent action strings
@@ -35,7 +35,7 @@ class AudioForegroundService : Service() {
         const val ACTION_NEXT_SEGMENT = "com.help_to_learn.action.NEXT_SEGMENT"
         const val ACTION_PREV_MATERIAL = "com.help_to_learn.action.PREV_MATERIAL"
         const val ACTION_NEXT_MATERIAL = "com.help_to_learn.action.NEXT_MATERIAL"
-        const val ACTION_ANKI = "com.help_to_learn.action.ANKI"
+        const val ACTION_PLAY_MODE = "com.help_to_learn.action.PLAY_MODE"
 
         var channel: MethodChannel? = null
         var instance: AudioForegroundService? = null
@@ -143,7 +143,7 @@ class AudioForegroundService : Service() {
             ACTION_NEXT_SEGMENT -> channel?.invokeMethod("onButtonPress", "next_segment")
             ACTION_PREV_MATERIAL -> channel?.invokeMethod("onButtonPress", "prev_material")
             ACTION_NEXT_MATERIAL -> channel?.invokeMethod("onButtonPress", "next_material")
-            ACTION_ANKI -> channel?.invokeMethod("onButtonPress", "anki")
+            ACTION_PLAY_MODE -> channel?.invokeMethod("onButtonPress", "play_mode")
         }
     }
 
@@ -157,12 +157,22 @@ class AudioForegroundService : Service() {
         hasNextMaterial = args["hasNextMaterial"] as? Boolean ?: false
         hasPrevSegment = args["hasPrevSegment"] as? Boolean ?: false
         hasNextSegment = args["hasNextSegment"] as? Boolean ?: false
+        val playlistInfo = args["playlistInfo"] as? String ?: ""
+        val modeLabel = args["modeLabel"] as? String ?: ""
 
         isPlaying = playing
 
         // Title / subtitle
         remoteViews.setTextViewText(R.id.notifTitle, title)
         remoteViews.setTextViewText(R.id.notifSubtitle, subtitle)
+
+        // Playlist info
+        val playlistText = if (modeLabel.isNotEmpty()) {
+            if (playlistInfo.isNotEmpty()) "$playlistInfo · $modeLabel" else modeLabel
+        } else {
+            playlistInfo
+        }
+        remoteViews.setTextViewText(R.id.notifPlaylistInfo, playlistText)
 
         // Play/Pause icon
         remoteViews.setImageViewResource(
@@ -192,7 +202,7 @@ class AudioForegroundService : Service() {
         setButtonPendingIntent(R.id.btnNextSegment, ACTION_NEXT_SEGMENT, REQ_NEXT_SEGMENT)
         setButtonPendingIntent(R.id.btnPrevMaterial, ACTION_PREV_MATERIAL, REQ_PREV_MATERIAL)
         setButtonPendingIntent(R.id.btnNextMaterial, ACTION_NEXT_MATERIAL, REQ_NEXT_MATERIAL)
-        setButtonPendingIntent(R.id.btnAnki, ACTION_ANKI, REQ_ANKI)
+        setButtonPendingIntent(R.id.btnPlayMode, ACTION_PLAY_MODE, REQ_PLAY_MODE)
 
         // Content intent (open app on tap)
         val openIntent = packageManager.getLaunchIntentForPackage(packageName)

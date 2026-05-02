@@ -10,6 +10,7 @@ import '../../core/models/material.dart';
 import '../../core/models/segment.dart';
 import '../../core/services/anki_service.dart';
 import '../../core/services/cache_service.dart';
+import '../../core/services/playlist_manager.dart';
 import 'dart:async';
 import '../../core/logging/app_logger.dart';
 import '../../main.dart' as app_main;
@@ -51,8 +52,6 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     final service = app_main.audioService;
     _playbackListener = () {
       if (!mounted) return;
-      // Only rebuild when something visible actually changes.
-      // Avoids rebuilds on every position update which cause scroll jank.
       bool needsRebuild = false;
       final segId = service.currentSegmentId;
       if (segId != null) {
@@ -61,25 +60,49 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
           _playingIndex = index;
           needsRebuild = true;
           _scrollToIndex(index);
+        } else if (index == -1 && _playingIndex != null) {
+          // Current segment belongs to a different material — reset
+          _playingIndex = null;
+          _isPlayingAll = false;
+          _isPlayingSelected = false;
+          _wasPlaying = false;
+          needsRebuild = true;
         }
+      } else if (_playingIndex != null || _wasPlaying) {
+        // Playback stopped entirely
+        _playingIndex = null;
+        _isPlayingAll = false;
+        _isPlayingSelected = false;
+        _wasPlaying = false;
+        needsRebuild = true;
       }
       final nowPlaying = service.playbackInfo.value.playing;
       if (nowPlaying != _wasPlaying) {
         _wasPlaying = nowPlaying;
         needsRebuild = true;
       }
-      if (needsRebuild) setState(() {});
+      if (needsRebuild) {
+        try { setState(() {}); } catch (_) {}
+      }
     };
     service.playbackInfo.addListener(_playbackListener!);
 
     // Wire notification "Push to Anki" button
     service.onRequestAnkiPush = () => _pushCurrentToAnki();
+
+    // Prompt when playlist auto-advances to another material
+    ref.read(playlistManagerProvider.notifier).onMaterialSwitched = (newId) {
+      if (mounted && newId != widget.materialId) {
+        _showNavigatePrompt(newId);
+      }
+    };
   }
 
   @override
   void dispose() {
     // Unregister notification Anki callback
     app_main.audioService.onRequestAnkiPush = null;
+    ref.read(playlistManagerProvider.notifier).onMaterialSwitched = null;
     if (_playbackListener != null) {
       app_main.audioService.playbackInfo.removeListener(_playbackListener!);
     }
@@ -96,8 +119,6 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
       final mat = await materialsApi.get(widget.materialId);
       final segsRaw = await materialsApi.getSegmentsRaw(widget.materialId);
       final segs = segsRaw.map(SegmentModel.fromJson).toList();
-      // Update material index for notification navigation
-      app_main.audioService.setCurrentMaterialIndex(widget.materialId);
       setState(() {
         _material = mat;
         _segments = segs;
@@ -105,6 +126,31 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
       });
       // Pre-cache all audio in background
       CacheService.instance.preCacheMaterial(segs.map((s) => s.id).toList());
+
+      // Sync with current playback state if this material is already playing
+      if (segs.isNotEmpty) {
+        final service = app_main.audioService;
+        final info = service.playbackInfo.value;
+        if (info.currentMaterialId == widget.materialId) {
+          final segId = service.currentSegmentId;
+          final idx = segId != null
+              ? segs.indexWhere((s) => s.id.toString() == segId)
+              : -1;
+          setState(() {
+            if (idx != -1) {
+              _playingIndex = idx;
+              _isPlayingSelected = true;
+              _isPlayingAll = false;
+            }
+            _wasPlaying = info.playing;
+          });
+          if (idx != -1) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _scrollToIndex(idx);
+            });
+          }
+        }
+      }
 
       // Auto-play if navigated from notification material change
       if (widget.autoPlay && segs.isNotEmpty) {
@@ -161,10 +207,42 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     }
   }
 
+  void _showNavigatePrompt(int newMaterialId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('已切换素材'),
+        content: const Text('播放已切换到下一个素材，是否跳转到新素材详情页？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              GoRouter.of(context).push('/material/$newMaterialId');
+            },
+            child: const Text('跳转'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── Playback ─────────────────────────────────────────────────────────────
 
   Future<void> _startSequential(int fromIndex, {bool isSelectedMode = false}) async {
     final service = app_main.audioService;
+
+    // Ensure material is in the playlist
+    final playlist = ref.read(playlistManagerProvider);
+    final alreadyInPlaylist = playlist.entries.any((e) => e.materialId == widget.materialId);
+    if (!alreadyInPlaylist) {
+      await ref.read(playlistManagerProvider.notifier).addMaterials([widget.materialId]);
+    }
+
     setState(() {
       _isPlayingAll = !isSelectedMode;
       _isPlayingSelected = isSelectedMode;
@@ -189,6 +267,12 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
         await service.play();
       }
       return;
+    }
+    // Ensure material is in the playlist
+    final playlist = ref.read(playlistManagerProvider);
+    final alreadyInPlaylist = playlist.entries.any((e) => e.materialId == widget.materialId);
+    if (!alreadyInPlaylist) {
+      await ref.read(playlistManagerProvider.notifier).addMaterials([widget.materialId]);
     }
     setState(() {
       _isPlayingAll = false;

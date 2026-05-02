@@ -1,0 +1,379 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
+
+import '../../core/logging/app_logger.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/users_api.dart';
+import '../../core/services/anki_service.dart';
+import '../../core/services/cache_service.dart';
+
+class SettingsPage extends ConsumerStatefulWidget {
+  const SettingsPage({super.key});
+
+  @override
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  final _serverUrlCtrl = TextEditingController();
+  final _ankiDeckCtrl = TextEditingController();
+  final _ankiModelCtrl = TextEditingController();
+  bool _loadingUser = true;
+  bool _saving = false;
+  int _cacheBytes = 0;
+  List<Map<String, dynamic>> _ankiDecks = [];
+  List<Map<String, dynamic>> _ankiModels = [];
+  bool _ankiAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+    _checkAnki();
+    _loadCacheSize();
+    AppLogger.info('SettingsPage opened', tag: 'Settings');
+  }
+
+  @override
+  void dispose() {
+    _serverUrlCtrl.dispose();
+    _ankiDeckCtrl.dispose();
+    _ankiModelCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    _serverUrlCtrl.text = ApiClient.baseUrl;
+    try {
+      final user = await usersApi.getMe();
+      setState(() {
+        _ankiDeckCtrl.text = user.ankiDeckName;
+        _ankiModelCtrl.text = user.ankiModelName;
+        _loadingUser = false;
+      });
+    } catch (e) {
+      setState(() => _loadingUser = false);
+    }
+  }
+
+  Future<void> _checkAnki() async {
+    final available = await AnkiService.instance.isAvailable();
+    if (!available) return;
+    final hasPermission = await AnkiService.instance.requestPermission();
+    if (!hasPermission) return;
+    final decks = await AnkiService.instance.getDeckList();
+    final models = await AnkiService.instance.getModelList();
+    setState(() {
+      _ankiAvailable = true;
+      _ankiDecks = decks;
+      _ankiModels = models;
+    });
+  }
+
+  Future<void> _loadCacheSize() async {
+    final size = await CacheService.instance.getCacheSize();
+    setState(() => _cacheBytes = size);
+  }
+
+  Future<void> _saveSettings() async {
+    setState(() => _saving = true);
+    try {
+      // Update server URL
+      final newUrl = _serverUrlCtrl.text.trim();
+      if (newUrl.isNotEmpty) {
+        await ApiClient.setBaseUrl(newUrl);
+      }
+      // Update user Anki settings via backend
+      await usersApi.updateMe(
+        ankiDeckName: _ankiDeckCtrl.text.trim(),
+        ankiModelName: _ankiModelCtrl.text.trim(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ 设置已保存')),
+        );
+      }
+      AppLogger.info('Settings saved', tag: 'Settings');
+    } catch (e, st) {
+      AppLogger.error('Failed to save settings',
+          tag: 'Settings', error: e, stackTrace: st);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('❌ 保存失败: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error),
+        );
+      }
+    } finally {
+      setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确认退出当前账户？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('退出', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await TokenStorage.clear();
+      if (mounted) context.go('/auth/login');
+    }
+  }
+
+  Future<void> _clearCache() async {
+    await CacheService.instance.clearAll();
+    await _loadCacheSize();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ 缓存已清除')),
+      );
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('设置'),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _saveSettings,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('保存'),
+          ),
+        ],
+      ),
+      body: _loadingUser
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // ── Server Settings ──────────────────────────────────────────
+                _SectionHeader(title: '服务器', icon: Icons.cloud_outlined),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextFormField(
+                      controller: _serverUrlCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '服务器地址',
+                        helperText: '默认: https://study.100on.de',
+                        prefixIcon: Icon(Icons.language),
+                      ),
+                      keyboardType: TextInputType.url,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Anki Settings ────────────────────────────────────────────
+                _SectionHeader(title: 'AnkiDroid', icon: Icons.style_outlined),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        if (!_ankiAvailable)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: Colors.orange.withOpacity(0.3)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.warning_amber,
+                                    color: Colors.orange, size: 18),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'AnkiDroid 未检测到或无权限。请先安装并授权 AnkiDroid。',
+                                    style: TextStyle(
+                                        color: Colors.orange, fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        // Deck selection
+                        if (_ankiDecks.isNotEmpty)
+                          DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            value: _ankiDeckCtrl.text.isEmpty
+                                ? null
+                                : _ankiDeckCtrl.text,
+                            decoration: const InputDecoration(
+                                labelText: '目标牌组', prefixIcon: Icon(Icons.folder_open)),
+                            items: _ankiDecks
+                                .map((d) => DropdownMenuItem<String>(
+                                      value: d['name'] as String,
+                                      child: Text(
+                                        d['name'] as String,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (v) =>
+                                setState(() => _ankiDeckCtrl.text = v ?? ''),
+                          )
+                        else
+                          TextFormField(
+                            controller: _ankiDeckCtrl,
+                            decoration: const InputDecoration(
+                              labelText: '目标牌组名称',
+                              prefixIcon: Icon(Icons.folder_open),
+                              helperText: '在 AnkiDroid 中已存在的牌组名',
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        // Model selection
+                        if (_ankiModels.isNotEmpty)
+                          DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            value: _ankiModelCtrl.text.isEmpty
+                                ? null
+                                : _ankiModelCtrl.text,
+                            decoration: const InputDecoration(
+                                labelText: '笔记类型', prefixIcon: Icon(Icons.view_agenda)),
+                            items: _ankiModels
+                                .map((m) => DropdownMenuItem<String>(
+                                      value: m['name'] as String,
+                                      child: Text(
+                                        m['name'] as String,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (v) =>
+                                setState(() => _ankiModelCtrl.text = v ?? ''),
+                          )
+                        else
+                          TextFormField(
+                            controller: _ankiModelCtrl,
+                            decoration: const InputDecoration(
+                              labelText: '笔记类型 (Note Type)',
+                              prefixIcon: Icon(Icons.view_agenda),
+                              helperText: '例如: Basic, HelpToLearn',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Cache ────────────────────────────────────────────────────
+                _SectionHeader(title: '存储', icon: Icons.storage_outlined),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.audio_file_outlined),
+                    title: const Text('音频缓存'),
+                    subtitle: Text(_formatBytes(_cacheBytes)),
+                    trailing: TextButton(
+                      onPressed: _clearCache,
+                      child: const Text('清除', style: TextStyle(color: Colors.redAccent)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Logs ─────────────────────────────────────────────────────
+                _SectionHeader(title: '调试', icon: Icons.bug_report_outlined),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.article_outlined),
+                        title: const Text('查看日志'),
+                        subtitle: const Text('查看应用运行日志'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.pushNamed('log-viewer'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.share_outlined),
+                        title: const Text('分享日志文件'),
+                        onTap: () async {
+                          final path = AppLogger.currentLogFilePath;
+                          if (path != null) {
+                            await Share.shareXFiles([XFile(path)],
+                                subject: 'HelpToLearn 日志');
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Account ──────────────────────────────────────────────────
+                _SectionHeader(title: '账户', icon: Icons.person_outlined),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.redAccent),
+                    title: const Text('退出登录',
+                        style: TextStyle(color: Colors.redAccent)),
+                    onTap: _logout,
+                  ),
+                ),
+                const SizedBox(height: 40),
+              ],
+            ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _SectionHeader({required this.title, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, top: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.primary,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

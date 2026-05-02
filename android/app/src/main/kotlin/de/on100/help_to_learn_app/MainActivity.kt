@@ -31,7 +31,7 @@ class MainActivity : FlutterActivity() {
 
         audioCh.setMethodCallHandler { call, result ->
             when (call.method) {
-                "startForeground" -> {
+                "startForegroundNotification" -> {
                     val intent = Intent(this@MainActivity, AudioForegroundService::class.java)
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                         startForegroundService(intent)
@@ -40,7 +40,7 @@ class MainActivity : FlutterActivity() {
                     }
                     val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
                     android.os.Handler(mainLooper).postDelayed({
-                        AudioForegroundService.instance?.updateNotification(args)
+                        AudioForegroundService.instance?.startForegroundNotification(args)
                     }, 100)
                     result.success(null)
                 }

@@ -26,7 +26,6 @@ class AudioForegroundService : Service() {
         private const val REQ_NEXT_SEGMENT = 2
         private const val REQ_PREV_MATERIAL = 3
         private const val REQ_NEXT_MATERIAL = 4
-        private const val REQ_PLAY_MODE = 5
         private const val REQ_CONTENT = 100
 
         // Intent action strings
@@ -35,8 +34,6 @@ class AudioForegroundService : Service() {
         const val ACTION_NEXT_SEGMENT = "com.help_to_learn.action.NEXT_SEGMENT"
         const val ACTION_PREV_MATERIAL = "com.help_to_learn.action.PREV_MATERIAL"
         const val ACTION_NEXT_MATERIAL = "com.help_to_learn.action.NEXT_MATERIAL"
-        const val ACTION_PLAY_MODE = "com.help_to_learn.action.PLAY_MODE"
-
         var channel: MethodChannel? = null
         var instance: AudioForegroundService? = null
     }
@@ -143,13 +140,25 @@ class AudioForegroundService : Service() {
             ACTION_NEXT_SEGMENT -> channel?.invokeMethod("onButtonPress", "next_segment")
             ACTION_PREV_MATERIAL -> channel?.invokeMethod("onButtonPress", "prev_material")
             ACTION_NEXT_MATERIAL -> channel?.invokeMethod("onButtonPress", "next_material")
-            ACTION_PLAY_MODE -> channel?.invokeMethod("onButtonPress", "play_mode")
         }
     }
 
     // ─── Notification Update (called from Flutter via MethodChannel) ──────────
 
+    fun startForegroundNotification(args: Map<*, *>) {
+        updateRemoteViews(args)
+        val notification = buildNotification()
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
     fun updateNotification(args: Map<*, *>) {
+        updateRemoteViews(args)
+        val notification = buildNotification()
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun updateRemoteViews(args: Map<*, *>) {
         val title = args["title"] as? String ?: "Help To Learn"
         val subtitle = args["subtitle"] as? String ?: ""
         val playing = args["playing"] as? Boolean ?: false
@@ -185,10 +194,6 @@ class AudioForegroundService : Service() {
         applyButtonState(R.id.btnNextMaterial, hasNextMaterial, 255)
         applyButtonState(R.id.btnPrevSegment, hasPrevSegment, 179)
         applyButtonState(R.id.btnNextSegment, hasNextSegment, 179)
-
-        // Build and post notification
-        val notification = buildNotification()
-        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun applyButtonState(viewId: Int, enabled: Boolean, activeAlpha: Int) {
@@ -202,8 +207,6 @@ class AudioForegroundService : Service() {
         setButtonPendingIntent(R.id.btnNextSegment, ACTION_NEXT_SEGMENT, REQ_NEXT_SEGMENT)
         setButtonPendingIntent(R.id.btnPrevMaterial, ACTION_PREV_MATERIAL, REQ_PREV_MATERIAL)
         setButtonPendingIntent(R.id.btnNextMaterial, ACTION_NEXT_MATERIAL, REQ_NEXT_MATERIAL)
-        setButtonPendingIntent(R.id.btnPlayMode, ACTION_PLAY_MODE, REQ_PLAY_MODE)
-
         // Content intent (open app on tap)
         val openIntent = packageManager.getLaunchIntentForPackage(packageName)
         val contentPending = PendingIntent.getActivity(

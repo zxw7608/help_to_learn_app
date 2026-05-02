@@ -12,7 +12,6 @@ class PlayerPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final playlist = ref.watch(playlistManagerProvider);
-    final info = app_main.audioService.playbackInfo.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,74 +41,79 @@ class PlayerPage extends ConsumerWidget {
             ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (ctx, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 20),
-                  // Album art + material info
-                  _AlbumArt(
-                    info: info,
-                    playlist: playlist,
-                    onTapMaterial: () {
-                      if (info.currentMaterialId > 0) {
-                        GoRouter.of(context).push('/material/${info.currentMaterialId}');
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  // Segment text
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Column(
-                      children: [
-                        GestureDetector(
-                          onTap: info.currentMaterialId > 0
-                              ? () => GoRouter.of(context).push('/material/${info.currentMaterialId}')
-                              : null,
-                          child: Text(
-                            info.title.isNotEmpty ? info.title : '加载中...',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+      body: ValueListenableBuilder<PlaybackInfo>(
+        valueListenable: app_main.audioService.playbackInfo,
+        builder: (ctx, info, _) {
+          return LayoutBuilder(
+            builder: (ctx, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 20),
+                      _AlbumArt(
+                        info: info,
+                        playlist: playlist,
+                        onTapMaterial: () {
+                          if (info.currentMaterialId > 0) {
+                            GoRouter.of(context).push('/material/${info.currentMaterialId}');
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                        child: Column(
+                          children: [
+                            GestureDetector(
+                              onTap: info.currentMaterialId > 0
+                                  ? () => GoRouter.of(context).push('/material/${info.currentMaterialId}')
+                                  : null,
+                              child: Text(
+                                info.title.isNotEmpty ? info.title : '加载中...',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (info.subtitle.isNotEmpty)
+                              Text(
+                                info.subtitle,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 14, color: Colors.white54),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        if (info.subtitle.isNotEmpty)
-                          Text(
-                            info.subtitle,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 14, color: Colors.white54),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 20),
+                      const _SeekBar(),
+                      const SizedBox(height: 12),
+                      _NavRow(
+                        info: info,
+                        onPrevMaterial: info.hasPrevPlaylist
+                            ? () => app_main.audioService.onPlaylistNav?.call(false)
+                            : null,
+                        onNextMaterial: info.hasNextPlaylist
+                            ? () => app_main.audioService.onPlaylistNav?.call(true)
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+                      _ModeButtons(playlist: playlist),
+                      const SizedBox(height: 8),
+                      if (playlist.isNotEmpty && playlist.hasCurrent)
+                        _QueuePeek(playlist: playlist),
+                      const SizedBox(height: 16),
+                    ],
                   ),
-                  const SizedBox(height: 20),
-                  // Seek bar + nav row (own listener, only these rebuild on position ticks)
-                  _PlayerControls(
-                    info: info,
-                    playlist: playlist,
-                    onPrevMaterial: () => app_main.audioService.onPlaylistNav?.call(false),
-                    onNextMaterial: () => app_main.audioService.onPlaylistNav?.call(true),
-                  ),
-                  const SizedBox(height: 10),
-                  // Mode & speed toggle buttons
-                  _ModeButtons(playlist: playlist, info: info),
-                  const SizedBox(height: 8),
-                  // Playlist queue peek
-                  if (playlist.isNotEmpty && playlist.hasCurrent)
-                    _QueuePeek(playlist: playlist),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
       ),
@@ -117,26 +121,16 @@ class PlayerPage extends ConsumerWidget {
   }
 }
 
-// ─── Player Controls (listens to position) ────────────────────────────────────
+// ─── Seek Bar ────────────────────────────────────────────────────────────────
 
-class _PlayerControls extends StatefulWidget {
-  final PlaybackInfo info;
-  final PlaylistState playlist;
-  final VoidCallback onPrevMaterial;
-  final VoidCallback onNextMaterial;
-
-  const _PlayerControls({
-    required this.info,
-    required this.playlist,
-    required this.onPrevMaterial,
-    required this.onNextMaterial,
-  });
+class _SeekBar extends StatefulWidget {
+  const _SeekBar();
 
   @override
-  State<_PlayerControls> createState() => _PlayerControlsState();
+  State<_SeekBar> createState() => _SeekBarState();
 }
 
-class _PlayerControlsState extends State<_PlayerControls> {
+class _SeekBarState extends State<_SeekBar> {
   double _sliderValue = 0.0;
   bool _isDragging = false;
 
@@ -150,55 +144,42 @@ class _PlayerControlsState extends State<_PlayerControls> {
           _sliderValue = (info.position.inMilliseconds / durationMs).clamp(0.0, 1.0);
         }
 
-        return Column(
-          children: [
-            // Seek slider
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Column(
-                children: [
-                  Slider(
-                    value: _sliderValue,
-                    onChanged: durationMs > 0
-                        ? (v) {
-                            _sliderValue = v;
-                            _isDragging = true;
-                          }
-                        : null,
-                    onChangeEnd: durationMs > 0
-                        ? (v) {
-                            _isDragging = false;
-                            final target = Duration(
-                                milliseconds: (v * durationMs).round());
-                            app_main.audioService.seek(target);
-                          }
-                        : null,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(_formatDuration(info.position),
-                            style: const TextStyle(fontSize: 12, color: Colors.white54)),
-                        Text(
-                            info.duration != null ? _formatDuration(info.duration!) : '--:--',
-                            style: const TextStyle(fontSize: 12, color: Colors.white54)),
-                      ],
-                    ),
-                  ),
-                ],
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            children: [
+              Slider(
+                value: _sliderValue,
+                onChanged: durationMs > 0
+                    ? (v) {
+                        _sliderValue = v;
+                        _isDragging = true;
+                      }
+                    : null,
+                onChangeEnd: durationMs > 0
+                    ? (v) {
+                        _isDragging = false;
+                        final target = Duration(
+                            milliseconds: (v * durationMs).round());
+                        app_main.audioService.seek(target);
+                      }
+                    : null,
               ),
-            ),
-            const SizedBox(height: 12),
-            // Navigation row
-            _NavRow(
-              info: info,
-              playlist: widget.playlist,
-              onPrevMaterial: info.hasPrevPlaylist ? widget.onPrevMaterial : null,
-              onNextMaterial: info.hasNextPlaylist ? widget.onNextMaterial : null,
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_formatDuration(info.position),
+                        style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                    Text(
+                        info.duration != null ? _formatDuration(info.duration!) : '--:--',
+                        style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -279,13 +260,11 @@ class _AlbumArt extends StatelessWidget {
 
 class _NavRow extends StatelessWidget {
   final PlaybackInfo info;
-  final PlaylistState playlist;
   final VoidCallback? onPrevMaterial;
   final VoidCallback? onNextMaterial;
 
   const _NavRow({
     required this.info,
-    required this.playlist,
     this.onPrevMaterial,
     this.onNextMaterial,
   });
@@ -311,7 +290,7 @@ class _NavRow extends StatelessWidget {
               : null,
         ),
         const SizedBox(width: 8),
-        _PlayButton(playing: info.playing, playlist: playlist),
+        _PlayButton(playing: info.playing),
         const SizedBox(width: 8),
         IconButton(
           iconSize: 28,
@@ -335,8 +314,7 @@ class _NavRow extends StatelessWidget {
 
 class _PlayButton extends ConsumerWidget {
   final bool playing;
-  final PlaylistState playlist;
-  const _PlayButton({required this.playing, required this.playlist});
+  const _PlayButton({required this.playing});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -379,15 +357,13 @@ class _PlayButton extends ConsumerWidget {
 
 class _ModeButtons extends ConsumerWidget {
   final PlaylistState playlist;
-  final PlaybackInfo info;
-  const _ModeButtons({required this.playlist, required this.info});
+  const _ModeButtons({required this.playlist});
 
   static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
-  String get _speedLabel {
-    final s = info.speed;
+  String _speedLabel(double s) {
     if (s == 1.0) return '1×';
-    return '$s×';
+    return '${s}x';
   }
 
   @override
@@ -421,15 +397,22 @@ class _ModeButtons extends ConsumerWidget {
             active: playlist.playlistLoop,
           ),
           const SizedBox(width: 6),
-          _ToggleChip(
-            label: '速度',
-            value: _speedLabel,
-            onTap: () {
-              final curIdx = _speeds.indexWhere((s) => (info.speed - s).abs() < 0.01);
-              final nextIdx = curIdx < 0 ? 3 : (curIdx + 1) % _speeds.length;
-              app_main.audioService.setSpeed(_speeds[nextIdx]);
-            },
-            cs: cs,
+          Expanded(
+            child: ValueListenableBuilder<PlaybackInfo>(
+              valueListenable: app_main.audioService.playbackInfo,
+              builder: (ctx, liveInfo, _) {
+                return _ToggleChip(
+                  label: '速度',
+                  value: _speedLabel(liveInfo.speed),
+                  onTap: () {
+                    final curIdx = _speeds.indexWhere((s) => (liveInfo.speed - s).abs() < 0.01);
+                    final nextIdx = curIdx < 0 ? 3 : (curIdx + 1) % _speeds.length;
+                    app_main.audioService.setSpeed(_speeds[nextIdx]);
+                  },
+                  cs: cs,
+                );
+              },
+            ),
           ),
         ],
       ),

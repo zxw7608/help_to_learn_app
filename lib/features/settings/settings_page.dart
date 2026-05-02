@@ -9,6 +9,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/users_api.dart';
 import '../../core/services/anki_service.dart';
 import '../../core/services/cache_service.dart';
+import '../../core/services/playlist_manager.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -149,6 +150,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
     if (confirmed == true) {
       await TokenStorage.clear();
+      ref.read(playlistManagerProvider.notifier).clear();
       if (mounted) context.go('/auth/login');
     }
   }

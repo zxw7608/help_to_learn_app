@@ -36,7 +36,7 @@ class PlaylistManager extends Notifier<PlaylistState> {
   void _wireAudioCallbacks() {
     _audio.onMaterialFinished = () => _handleMaterialFinished();
     _audio.onPlaylistNav = (bool next) => _navigatePlaylist(next);
-    _audio.onModeCycle = () => cycleMode();
+    _audio.onPlayRequested = () => playFromCurrent();
   }
 
   void cycleMode() {
@@ -317,14 +317,21 @@ class PlaylistManager extends Notifier<PlaylistState> {
 
   void _syncPlaybackInfo() {
     final current = state.current;
+    final multiEntry = state.entries.length >= 2;
+    final hasPrev = state.materialMode == MaterialPlayMode.random
+        ? multiEntry
+        : state.hasPrev;
+    final hasNext = state.materialMode == MaterialPlayMode.random
+        ? multiEntry
+        : state.hasNext;
     _audio.updatePlaylistInfo(
       playlistLabel: state.isEmpty
           ? ''
           : '素材 ${state.currentIndex + 1}/${state.entries.length}',
       materialTitle: current?.title ?? '',
       materialId: current?.materialId ?? 0,
-      hasPrevPlaylist: state.hasPrev,
-      hasNextPlaylist: state.hasNext,
+      hasPrevPlaylist: hasPrev,
+      hasNextPlaylist: hasNext,
       modeLabel:
           '${state.materialMode.shortLabel}·${state.segmentMode.shortLabel}${state.playlistLoop ? "·循环" : ""}',
     );

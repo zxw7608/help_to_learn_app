@@ -84,7 +84,7 @@ class CustomAudioService {
   // Callbacks
   void Function()? onMaterialFinished;
   void Function(bool next)? onPlaylistNav;
-  void Function()? onModeCycle;
+  void Function()? onPlayRequested;
   void Function()? onRequestAnkiPush;
 
   CustomAudioService() {
@@ -147,6 +147,12 @@ class CustomAudioService {
       case 'play_pause':
         if (_player.playing) {
           pause();
+        } else if (_currentMaterialId == 0) {
+          if (onPlayRequested != null) {
+            onPlayRequested!();
+          } else {
+            play();
+          }
         } else {
           play();
         }
@@ -166,8 +172,6 @@ class CustomAudioService {
         } else {
           // Legacy: no-op
         }
-      case 'play_mode':
-        onModeCycle?.call();
       case 'anki':
         onRequestAnkiPush?.call();
     }
@@ -461,7 +465,7 @@ class CustomAudioService {
 
     if (!_foregroundStarted) {
       _foregroundStarted = true;
-      await _channel.invokeMethod('startForeground', payload);
+      await _channel.invokeMethod('startForegroundNotification', payload);
     } else {
       await _channel.invokeMethod('updateNotification', payload);
     }

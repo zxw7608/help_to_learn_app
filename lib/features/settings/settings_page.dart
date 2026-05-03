@@ -1,8 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:io';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/logging/app_logger.dart';
 import '../../core/api/api_client.dart';
@@ -10,6 +12,7 @@ import '../../core/api/users_api.dart';
 import '../../core/services/anki_service.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/playlist_manager.dart';
+import '../../core/services/version_service.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -29,6 +32,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   List<Map<String, dynamic>> _ankiModels = [];
   bool _ankiAvailable = false;
   bool _detectingAnki = false;
+  bool _checkingUpdate = false;
+  VersionCheckResult? _versionResult;
+
+  final _versionService = VersionService();
 
   @override
   void initState() {
@@ -169,6 +176,51 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _checkVersion() async {
+    setState(() => _checkingUpdate = true);
+    try {
+      final result = await _versionService.checkLatestVersion();
+      if (mounted) {
+        setState(() {
+          _versionResult = result;
+          _checkingUpdate = false;
+        });
+        final msg = result.hasUpdate
+            ? '发现新版本: ${result.latestVersion}'
+            : result.latestVersion != null
+                ? '已是最新版本'
+                : '无法获取更新信息，请检查网络';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _checkingUpdate = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('检查更新失败，请检查网络连接')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openUrl(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Fallback: try platform default
+      try {
+        await launchUrl(Uri.parse(url));
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('无法打开链接: $e')),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -366,6 +418,99 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         },
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Updates ──────────────────────────────────────────────────
+                _SectionHeader(title: '更新', icon: Icons.system_update_outlined),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 16),
+                            const SizedBox(width: 8),
+                            Text('当前版本: ${VersionService.currentVersion}'),
+                          ],
+                        ),
+                        if (_versionResult != null) ...[
+                          const SizedBox(height: 12),
+                          if (_versionResult!.latestVersion != null) ...[
+                            Row(
+                              children: [
+                                Icon(
+                                  _versionResult!.hasUpdate
+                                      ? Icons.new_releases_outlined
+                                      : Icons.check_circle_outline,
+                                  size: 16,
+                                  color: _versionResult!.hasUpdate
+                                      ? Colors.orange
+                                      : Colors.green,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _versionResult!.hasUpdate
+                                        ? '发现新版本: ${_versionResult!.latestVersion}'
+                                        : '已是最新版本',
+                                    style: TextStyle(
+                                      color: _versionResult!.hasUpdate
+                                          ? Colors.orange
+                                          : Colors.green,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_versionResult!.hasUpdate) ...[
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () =>
+                                      _openUrl(_versionResult!.releaseUrl),
+                                  icon: const Icon(Icons.download, size: 16),
+                                  label: const Text('前往下载'),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ],
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _checkingUpdate ? null : _checkVersion,
+                            icon: _checkingUpdate
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.refresh, size: 16),
+                            label: const Text('检查更新'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── About ────────────────────────────────────────────────────
+                _SectionHeader(title: '关于', icon: Icons.info_outline),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.code),
+                    title: const Text('GitHub 项目'),
+                    subtitle: const Text('查看源码，提交反馈'),
+                    trailing: const Icon(Icons.open_in_new, size: 18),
+                    onTap: () => _openUrl(VersionService.githubRepo),
                   ),
                 ),
                 const SizedBox(height: 16),

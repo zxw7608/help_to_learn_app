@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/users_api.dart';
 import '../../core/logging/app_logger.dart';
+import '../../core/services/version_service.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -75,6 +77,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return '无法连接服务器，请检查网络或服务器地址';
     }
     return '登录失败: $msg';
+  }
+
+  Future<void> _openUrl(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(Uri.parse(url));
+      } catch (_) {}
+    }
   }
 
   @override
@@ -214,6 +226,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         TextButton(
                           onPressed: () => context.go('/auth/register'),
                           child: const Text('还没有账户？注册'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => _openUrl(VersionService.githubRepo),
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text('关于 Help To Learn'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white38,
+                          ),
                         ),
                       ],
                     ),

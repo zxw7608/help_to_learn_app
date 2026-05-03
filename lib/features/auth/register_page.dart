@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/users_api.dart';
 import '../../core/logging/app_logger.dart';
+import '../../core/services/version_service.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
@@ -67,6 +69,16 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             : '注册失败，请重试';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _openUrl(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(Uri.parse(url));
+      } catch (_) {}
     }
   }
 
@@ -157,6 +169,15 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                               strokeWidth: 2, color: Colors.white),
                         )
                       : const Text('注册'),
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () => _openUrl(VersionService.githubRepo),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('关于 Help To Learn'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: cs.onSurface.withOpacity(0.5),
+                  ),
                 ),
               ],
             ),

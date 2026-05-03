@@ -368,12 +368,12 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
 
   void _shareMaterial() {
     if (_material == null) return;
-    final url = '${ApiClient.baseUrl}/materials/${widget.materialId}';
+    final url = '${ApiClient.baseUrl}/share/${widget.materialId}';
     Share.share(url, subject: _material!.title);
   }
 
   void _shareSegment(SegmentModel segment, int index) {
-    final url = '${ApiClient.baseUrl}/materials/${widget.materialId}#seg-${segment.id}';
+    final url = '${ApiClient.baseUrl}/share/${widget.materialId}#seg-${segment.id}';
     Share.share(url, subject: segment.text);
   }
 

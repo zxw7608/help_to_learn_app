@@ -169,7 +169,7 @@ class AnkiService {
       AppLogger.debug('Model ID: $modelId', tag: 'AnkiService');
 
       // Build card fields
-      final shareUrl = '${ApiClient.baseUrl}/materials/${segment.materialId}';
+      final shareUrl = '${ApiClient.baseUrl}/share/${segment.materialId}';
       
       String front = segment.text;
       if (segment.translation != null && segment.translation!.isNotEmpty) {

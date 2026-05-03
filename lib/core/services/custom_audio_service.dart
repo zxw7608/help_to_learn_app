@@ -29,6 +29,7 @@ class PlaybackInfo {
   final bool hasPrevPlaylist;
   final bool hasNextPlaylist;
   final double speed;
+  final bool hasSource;
 
   const PlaybackInfo({
     this.playing = false,
@@ -47,6 +48,7 @@ class PlaybackInfo {
     this.hasPrevPlaylist = false,
     this.hasNextPlaylist = false,
     this.speed = 1.0,
+    this.hasSource = false,
   });
 }
 
@@ -147,12 +149,8 @@ class CustomAudioService {
       case 'play_pause':
         if (_player.playing) {
           pause();
-        } else if (_currentMaterialId == 0) {
-          if (onPlayRequested != null) {
-            onPlayRequested!();
-          } else {
-            play();
-          }
+        } else if (_segments.isEmpty) {
+          onPlayRequested?.call();
         } else {
           play();
         }
@@ -447,6 +445,7 @@ class CustomAudioService {
       hasPrevPlaylist: _hasPrevPlaylist,
       hasNextPlaylist: _hasNextPlaylist,
       speed: _player.speed,
+      hasSource: _segments.isNotEmpty,
     );
     final payload = <String, dynamic>{
       'title': title,

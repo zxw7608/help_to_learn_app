@@ -322,7 +322,7 @@ class _PlayButton extends ConsumerWidget {
       onTap: () {
         if (playing) {
           app_main.audioService.pause();
-        } else if (app_main.audioService.playbackInfo.value.currentMaterialId == 0) {
+        } else if (!app_main.audioService.playbackInfo.value.hasSource) {
           ref.read(playlistManagerProvider.notifier).playFromCurrent();
         } else {
           app_main.audioService.play();

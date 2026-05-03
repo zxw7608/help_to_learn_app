@@ -58,11 +58,18 @@ class AudioForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "onStartCommand: action=${intent?.action}")
         handleIntentAction(intent)
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "onTaskRemoved: stopping playback and foreground service")
+        stopServiceAndNotification()
+        super.onTaskRemoved(rootIntent)
+    }
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
@@ -79,7 +86,7 @@ class AudioForegroundService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Audio playback controls"
                 setShowBadge(false)

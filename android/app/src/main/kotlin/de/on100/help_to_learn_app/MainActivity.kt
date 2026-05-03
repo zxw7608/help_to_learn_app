@@ -60,59 +60,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.i("MainActivity", "onDestroy: requesting Dart audio cleanup")
-        var destroyed = false
-        val handler = Handler(Looper.getMainLooper())
-        val parentOnDestroy = { super.onDestroy() }
-
-        val timeout = Runnable {
-            if (!destroyed) {
-                destroyed = true
-                Log.w("MainActivity", "onDestroy: Dart response timed out, forcing destroy")
-                parentOnDestroy()
-            }
-        }
-        handler.postDelayed(timeout, 2000)
-
-        try {
-            lifecycleChannel?.invokeMethod("onDestroy", null, object : MethodChannel.Result {
-                override fun success(result: Any?) {
-                    if (!destroyed) {
-                        destroyed = true
-                        handler.removeCallbacks(timeout)
-                        Log.i("MainActivity", "onDestroy: Dart cleanup completed, proceeding to super.onDestroy")
-                        parentOnDestroy()
-                    }
-                }
-                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                    if (!destroyed) {
-                        destroyed = true
-                        handler.removeCallbacks(timeout)
-                        Log.w("MainActivity", "onDestroy: Dart cleanup error: $errorMessage")
-                        parentOnDestroy()
-                    }
-                }
-                override fun notImplemented() {
-                    if (!destroyed) {
-                        destroyed = true
-                        handler.removeCallbacks(timeout)
-                        Log.w("MainActivity", "onDestroy: method not implemented in Dart")
-                        parentOnDestroy()
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            if (!destroyed) {
-                destroyed = true
-                handler.removeCallbacks(timeout)
-                Log.e("MainActivity", "onDestroy: failed to send cleanup signal", e)
-                parentOnDestroy()
-            }
-        }
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         val fixedData = data ?: Intent()
         if (fixedData.action == null) {

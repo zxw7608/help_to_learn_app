@@ -336,7 +336,7 @@ class _MiniPlayerBar extends StatelessWidget {
                   onPressed: () {
                     if (isPlaying) {
                       app_main.audioService.pause();
-                    } else if (info.currentMaterialId == 0) {
+                    } else if (!info.hasSource) {
                       onPlayCurrent();
                     } else {
                       app_main.audioService.play();

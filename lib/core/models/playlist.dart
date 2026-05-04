@@ -3,7 +3,7 @@ import 'material.dart';
 
 enum MaterialPlayMode { sequential, random, singleLoop }
 
-enum SegmentPlayMode { sequential, random, singleLoop }
+enum SegmentPlayMode { sequential, random, singleLoop, loop2, loop3 }
 
 class PlaylistEntry {
   final int materialId;
@@ -111,6 +111,10 @@ extension SegmentPlayModeLabel on SegmentPlayMode {
         return '片段随机';
       case SegmentPlayMode.singleLoop:
         return '片段单循';
+      case SegmentPlayMode.loop2:
+        return '片段2次';
+      case SegmentPlayMode.loop3:
+        return '片段3次';
     }
   }
 
@@ -122,6 +126,10 @@ extension SegmentPlayModeLabel on SegmentPlayMode {
         return '随机';
       case SegmentPlayMode.singleLoop:
         return '单循';
+      case SegmentPlayMode.loop2:
+        return '2次';
+      case SegmentPlayMode.loop3:
+        return '3次';
     }
   }
 }

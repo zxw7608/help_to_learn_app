@@ -30,7 +30,13 @@ class PlayerPage extends ConsumerWidget {
         ),
         leading: IconButton(
           icon: const Icon(Icons.keyboard_arrow_down),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/materials');
+            }
+          },
         ),
         actions: [
           if (playlist.isNotEmpty)

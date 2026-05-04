@@ -63,6 +63,8 @@ class CustomAudioService {
   bool _isRecovering = false;
   bool _foregroundStarted = false;
   SegmentPlayMode _segmentPlayMode = SegmentPlayMode.sequential;
+  int _loopCount = 0;
+  int _maxLoops = 0;
 
   // Playlist info (set by PlaylistManager)
   String _playlistLabel = '';
@@ -104,6 +106,12 @@ class CustomAudioService {
 
   void setSegmentPlayMode(SegmentPlayMode mode) {
     _segmentPlayMode = mode;
+    _loopCount = 0;
+    _maxLoops = switch (mode) {
+      SegmentPlayMode.loop2 => 2,
+      SegmentPlayMode.loop3 => 3,
+      _ => 0,
+    };
   }
 
   Future<void> setSpeed(double speed) async {
@@ -343,22 +351,40 @@ class CustomAudioService {
         break;
       case SegmentPlayMode.singleLoop:
         break;
+      case SegmentPlayMode.loop2:
+      case SegmentPlayMode.loop3:
+        _loopCount++;
+        if (_loopCount >= _maxLoops) {
+          _loopCount = 0;
+          if (_currentSegmentIndex < _segments.length - 1) {
+            _currentSegmentIndex++;
+          } else if (onMaterialFinished != null) {
+            onMaterialFinished!();
+            return;
+          } else {
+            await stop();
+            return;
+          }
+        }
+        break;
     }
     final ok = await _loadCurrentSegment();
     if (ok) await play();
   }
 
   Future<void> _nextSegment() async {
-    // Apply segment mode for next-segment logic
+    _loopCount = 0; // reset on manual skip
     switch (_segmentPlayMode) {
       case SegmentPlayMode.sequential:
+      case SegmentPlayMode.loop2:
+      case SegmentPlayMode.loop3:
         if (_currentSegmentIndex < _segments.length - 1) {
           _currentSegmentIndex++;
         } else if (onMaterialFinished != null) {
           onMaterialFinished!();
           return;
         } else {
-          return; // at last segment, no playlist
+          return;
         }
         break;
       case SegmentPlayMode.random:
@@ -372,7 +398,6 @@ class CustomAudioService {
         }
         break;
       case SegmentPlayMode.singleLoop:
-        // Stay on same segment, just seek to beginning
         break;
     }
     final ok = await _loadCurrentSegment();
@@ -380,6 +405,7 @@ class CustomAudioService {
   }
 
   Future<void> _previousSegment() async {
+    _loopCount = 0; // reset on manual skip
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
     } else if (_segmentPlayMode == SegmentPlayMode.random) {

@@ -174,9 +174,8 @@ class _GlobalMiniPlayerBar extends StatelessWidget {
 
         return GestureDetector(
           onTap: () {
-            final router = GoRouter.of(context);
-            if (router.state?.uri.toString() != '/player') {
-              router.push('/player');
+            if (GoRouterState.of(context).uri.toString() != '/player') {
+              context.push('/player');
             }
           },
           child: Container(

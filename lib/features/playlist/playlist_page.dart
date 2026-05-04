@@ -111,9 +111,8 @@ class _PlaylistPageState extends ConsumerState<PlaylistPage> {
   }
 
   void _goToPlayer() {
-    final router = GoRouter.of(context);
-    if (router.state?.uri.toString() != '/player') {
-      router.push('/player');
+    if (GoRouterState.of(context).uri.toString() != '/player') {
+      context.push('/player');
     }
   }
 

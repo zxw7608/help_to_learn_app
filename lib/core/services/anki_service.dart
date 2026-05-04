@@ -126,6 +126,7 @@ class AnkiService {
     SegmentModel segment, {
     required String deckName,
     required String modelName,
+    String? analysisText,
   }) async {
     AppLogger.info(
       'Pushing segment ${segment.id} to Anki deck="$deckName" model="$modelName"',
@@ -175,6 +176,14 @@ class AnkiService {
       if (segment.translation != null && segment.translation!.isNotEmpty) {
         front += "<br><small style='color:#666'>${segment.translation}</small>";
       }
+      // Append AI analysis if available
+      if (analysisText != null && analysisText.isNotEmpty) {
+        final cleanAnalysis = analysisText
+            .replaceAll(RegExp(r'\*\*'), '')
+            .replaceAll('\n', '<br>');
+        front += "<br><br><small style='color:#6f42c1'><strong>💡 AI解析:</strong><br>$cleanAnalysis</small>";
+      }
+
       front += "<br><small><a href='$shareUrl' style='color:#4a9eff'>🔗 View online</a></small>";
 
       String back = '[sound:${_audioFileName(segment)}]';
@@ -228,6 +237,7 @@ class AnkiService {
     List<SegmentModel> segments, {
     required String deckName,
     required String modelName,
+    Map<int, String>? analysisMap,
     void Function(int done, int total)? onProgress,
   }) async {
     AppLogger.info(
@@ -237,8 +247,10 @@ class AnkiService {
     for (var i = 0; i < segments.length; i++) {
       final seg = segments[i];
       try {
-        final noteId =
-            await pushSegment(seg, deckName: deckName, modelName: modelName);
+        final noteId = await pushSegment(seg,
+            deckName: deckName,
+            modelName: modelName,
+            analysisText: analysisMap?[seg.id]);
         results.add(AnkiPushResult(segmentId: seg.id, noteId: noteId, success: true));
       } catch (e) {
         AppLogger.warning('Batch push failed for segment ${seg.id}',

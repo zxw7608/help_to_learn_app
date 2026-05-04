@@ -6,12 +6,17 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/api/materials_api.dart';
 import '../../core/api/users_api.dart';
 import '../../core/api/api_client.dart';
+import '../../core/api/analysis_api.dart';
 import '../../core/models/material.dart';
 import '../../core/models/segment.dart';
+import '../../core/models/analysis_record.dart';
+import '../../core/models/user.dart';
 import '../../core/services/anki_service.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/playlist_manager.dart';
 import 'dart:async';
+import 'package:flutter/services.dart';
+import 'package:dio/dio.dart';
 import '../../core/logging/app_logger.dart';
 import '../../main.dart' as app_main;
 
@@ -42,6 +47,16 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
 
   VoidCallback? _playbackListener;
   PlaylistManager? _playlistManager;
+
+  // AI Analysis state
+  final Map<int, String> _analysisPreviews = {};
+  bool _analyzing = false;
+  String? _analysisPhrase;
+  String? _analysisResult;
+  List<AnalysisRecord> _analysisRecords = [];
+  bool _loadingRecords = false;
+  int _recordsSegIndex = 0;
+  UserModel? _userConfig;
 
   @override
   void initState() {
@@ -154,6 +169,14 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
           }
         }
       }
+
+      // Load user config (for AI settings)
+      try {
+        _userConfig = await usersApi.getMe();
+      } catch (_) {}
+
+      // Load analysis previews
+      _loadAnalysisPreviews();
 
       // Auto-play if navigated from notification material change
       if (widget.autoPlay && segs.isNotEmpty) {
@@ -318,6 +341,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
         segment,
         deckName: user.ankiDeckName,
         modelName: user.ankiModelName,
+        analysisText: _analysisPreviews[segment.id],
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -346,6 +370,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
         _segments,
         deckName: user.ankiDeckName,
         modelName: user.ankiModelName,
+        analysisMap: _analysisPreviews,
         onProgress: (d, total) {
           done = d;
           if (mounted) setState(() {});
@@ -364,6 +389,372 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     } finally {
       setState(() => _pushingAll = false);
     }
+  }
+
+  // ─── AI Analysis ──────────────────────────────────────────────────────────
+
+  Future<void> _loadAnalysisPreviews() async {
+    if (_segments.isEmpty) return;
+    try {
+      final records = await analysisApi.list(size: 200);
+      final previews = <int, String>{};
+      for (final r in records) {
+        previews.putIfAbsent(r.segmentId, () => r.analysis);
+      }
+      if (mounted) setState(() {
+        _analysisPreviews.clear();
+        _analysisPreviews.addAll(previews);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _doAnalyze(int segId, String phrase) async {
+    if (_userConfig?.aiBaseUrl == null || _userConfig?.aiApiKey == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置中配置 AI Base URL 和 API Key')),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _analyzing = true;
+      _analysisPhrase = phrase;
+      _analysisResult = null;
+    });
+
+    _showAnalysisResultSheet();
+
+    try {
+      final idx = _segments.indexWhere((s) => s.id == segId);
+      final contextSegments = <Map<String, dynamic>>[];
+      if (idx != -1) {
+        final start = (idx - 1).clamp(0, _segments.length);
+        final end = (idx + 1).clamp(0, _segments.length - 1);
+        for (var i = start; i <= end; i++) {
+          contextSegments.add({
+            'index': _segments[i].index,
+            'text': _segments[i].text,
+          });
+        }
+      }
+      final contextStr =
+          contextSegments.map((c) => '[#${c['index']}] ${c['text']}').join('\n');
+
+      final seg = _segments.firstWhere((s) => s.id == segId);
+      final segText = seg.text;
+      final phraseIdx = segText.indexOf(phrase);
+      String immediateContext = phrase;
+      if (phraseIdx != -1) {
+        final before = segText.substring(0, phraseIdx).trim();
+        final after = segText.substring(phraseIdx + phrase.length).trim();
+        final beforeParts = before.split(RegExp(r'\s+'));
+        final afterParts = after.split(RegExp(r'\s+'));
+        final beforeWords = beforeParts
+            .sublist((beforeParts.length - 5).clamp(0, beforeParts.length))
+            .join(' ');
+        final afterWords = afterParts.take(5).join(' ');
+        immediateContext = '$beforeWords **$phrase** $afterWords'.trim();
+      }
+
+      const defaultPrompt =
+          // ignore: lines_longer_than_80_chars
+          "You are an English language tutor. Analyze the phrase \"\${phrase}\" from this sentence: \"\${immediateContext}\"\n\nFull transcript context:\n\${contextStr}\n\nPlease provide a concise analysis in Chinese:\n\n1. 风格要求：\n\n极简： 能用 5 个字说明白，绝不用 10 个字。\n\n大白话： 像跟 5 岁小朋友说话一样，直白、简单。\n\n拒绝脑补： 不要分析心路历程，只说最直观的意思。\n\n2. 结构要求：\n\n短语整体含义：一句话说明在文中的意思。\n\n逐词解析：\n\n介词/副词/表语：给出在文中的意境，这里要用英文解释\n\n高级/核心词：用最简单的同义词替换，这里要用英文解释\n\n例句：1-2 个极简的常用句子。\n\n3. 负面约束（禁止出现）：\n\n禁止说\"前者...后者...\"。\n\n禁止说\"隐喻\"、\"由下而上\"、\"发展轨迹\"、\"社会性成熟\"等虚词。\n\n禁止进行深度语义对比。\n\nKeep it concise. Use plain text, no markdown other than **bold** for headers.";
+
+      final promptTemplate = (_userConfig?.aiPrompt?.isNotEmpty ?? false)
+          ? _userConfig!.aiPrompt!
+          : defaultPrompt;
+      final prompt = promptTemplate
+          .replaceAll(r'${phrase}', phrase)
+          .replaceAll(r'${immediateContext}', immediateContext)
+          .replaceAll(r'${contextStr}', contextStr);
+
+      final baseUrl = _userConfig!.aiBaseUrl!.replaceAll(RegExp(r'/+$'), '');
+      final response = await Dio().post(
+        '$baseUrl/chat/completions',
+        data: {
+          'model': _userConfig!.aiModel ?? 'gpt-3.5-turbo',
+          'messages': [
+            {'role': 'user', 'content': prompt}
+          ],
+          'temperature': 0.7,
+          'max_tokens': 800,
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${_userConfig!.aiApiKey}',
+          },
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final analysis = data['choices']?[0]?['message']?['content'] as String? ??
+          'No analysis returned';
+
+      await analysisApi.save(segId,
+          selectedPhrase: phrase, analysis: analysis);
+
+      setState(() {
+        _analysisResult = analysis;
+        _analysisPreviews[segId] = analysis;
+        _analyzing = false;
+      });
+
+      // Dismiss the loading sheet and show the result
+      if (mounted) {
+        Navigator.pop(context);
+        _showAnalysisResultSheet();
+      }
+    } catch (e) {
+      setState(() => _analyzing = false);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('解析失败: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error),
+        );
+      }
+    }
+  }
+
+  void _showAnalysisResultSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E2E),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('AI 解析结果',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white)),
+                  if (_analysisPhrase != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text('选中短语: $_analysisPhrase',
+                          style: const TextStyle(color: Color(0xFF6f42c1))),
+                    ),
+                  const Divider(color: Color(0xFF2A2A3E)),
+                  if (_analyzing)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(40),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (_analysisResult != null)
+                    _buildAnalysisWidget(_analysisResult!)
+                  else
+                    const Text('暂无结果',
+                        style: TextStyle(color: Colors.white54)),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('关闭'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAnalysisWidget(String text) {
+    return SelectableText(
+      text,
+      style: const TextStyle(
+        color: Color(0xFFCCCCCC),
+        fontSize: 14,
+        height: 1.6,
+      ),
+    );
+  }
+
+  Future<void> _showAnalysisRecords(SegmentModel seg) async {
+    setState(() {
+      _loadingRecords = true;
+      _recordsSegIndex = seg.index;
+      _analysisRecords = [];
+    });
+
+    try {
+      final records = await analysisApi.forSegment(seg.id);
+      if (mounted) setState(() => _analysisRecords = records);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('加载解析记录失败'),
+              backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingRecords = false);
+    }
+
+    if (mounted) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: const Color(0xFF1E1E2E),
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('AI 解析记录 - 片段 #$_recordsSegIndex',
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white)),
+                const Divider(color: Color(0xFF2A2A3E)),
+                if (_loadingRecords)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(40),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (_analysisRecords.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Text('暂无解析记录',
+                          style: TextStyle(color: Colors.white54)),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _analysisRecords.length,
+                      itemBuilder: (ctx, i) {
+                        final rec = _analysisRecords[i];
+                        return Card(
+                          color: const Color(0xFF2A2A3E),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('选中短语: ${rec.selectedPhrase}',
+                                    style: const TextStyle(
+                                        color: Color(0xFF6f42c1),
+                                        fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                _buildAnalysisWidget(rec.analysis),
+                                const SizedBox(height: 8),
+                                Text(
+                                  rec.createdAt.toLocal().toString(),
+                                  style: const TextStyle(
+                                      color: Colors.white38, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('关闭'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showAnalyzeDialog(SegmentModel seg, {String prefill = ''}) {
+    final phraseCtrl = TextEditingController(text: prefill);
+    // Try to pre-fill from clipboard if no explicit prefill
+    if (prefill.isEmpty) {
+      Clipboard.getData(Clipboard.kTextPlain).then((data) {
+        final clip = data?.text?.trim() ?? '';
+        if (clip.isNotEmpty && phraseCtrl.text.isEmpty) {
+          phraseCtrl.text = clip;
+        }
+      });
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('AI 解析', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              constraints: const BoxConstraints(maxHeight: 120),
+              child: SingleChildScrollView(
+                child: Text(seg.text,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phraseCtrl,
+              decoration: const InputDecoration(
+                labelText: '输入要解析的短语',
+                hintText: '从上方原文中选择或输入短语...',
+                labelStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: Colors.white30),
+              ),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final phrase = phraseCtrl.text.trim();
+              if (phrase.isNotEmpty) {
+                Navigator.pop(ctx);
+                _doAnalyze(seg.id, phrase);
+              }
+            },
+            child: const Text('解析'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _shareMaterial() {
@@ -511,6 +902,10 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
                     onSelect: () => setState(() => _playingIndex = i),
                     onPushAnki: () => _pushSingleToAnki(seg),
                     onLongPressShare: () => _shareSegment(seg, i),
+                    analysisPreview: _analysisPreviews[seg.id],
+                    onAnalyze: (phrase) => _doAnalyze(seg.id, phrase),
+                    onShowAnalyzeDialog: () => _showAnalyzeDialog(seg),
+                    onShowRecords: () => _showAnalysisRecords(seg),
                   ),
                 );
               },
@@ -621,6 +1016,10 @@ class _SegmentCard extends StatelessWidget {
   final VoidCallback onSelect;
   final VoidCallback onPushAnki;
   final VoidCallback onLongPressShare;
+  final String? analysisPreview;
+  final VoidCallback? onShowRecords;
+  final void Function(String phrase)? onAnalyze;
+  final VoidCallback? onShowAnalyzeDialog;
 
   const _SegmentCard({
     required this.segment,
@@ -631,6 +1030,10 @@ class _SegmentCard extends StatelessWidget {
     required this.onSelect,
     required this.onPushAnki,
     required this.onLongPressShare,
+    this.analysisPreview,
+    this.onShowRecords,
+    this.onAnalyze,
+    this.onShowAnalyzeDialog,
   });
 
   @override
@@ -659,11 +1062,62 @@ class _SegmentCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.share, color: Colors.white),
-                    title: const Text('分享该片段', style: TextStyle(color: Colors.white)),
+                    leading: const Icon(Icons.psychology,
+                        color: Color(0xFF6f42c1)),
+                    title: const Text('AI 解析',
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: Text(segment.text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onShowAnalyzeDialog?.call();
+                    },
+                  ),
+                  ListTile(
+                    leading:
+                        const Icon(Icons.history, color: Colors.white54),
+                    title: const Text('AI解析记录',
+                        style: TextStyle(color: Colors.white)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onShowRecords?.call();
+                    },
+                  ),
+                  ListTile(
+                    leading:
+                        const Icon(Icons.copy, color: Colors.white),
+                    title: const Text('复制原文',
+                        style: TextStyle(color: Colors.white)),
+                    onTap: () {
+                      Clipboard.setData(
+                          ClipboardData(text: segment.text));
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已复制到剪贴板')),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading:
+                        const Icon(Icons.share, color: Colors.white),
+                    title: const Text('分享该片段',
+                        style: TextStyle(color: Colors.white)),
                     onTap: () {
                       Navigator.pop(ctx);
                       onLongPressShare();
+                    },
+                  ),
+                  ListTile(
+                    leading:
+                        const Icon(Icons.style, color: Colors.white54),
+                    title: const Text('加入Anki',
+                        style: TextStyle(color: Colors.white)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onPushAnki();
                     },
                   ),
                 ],
@@ -701,12 +1155,60 @@ class _SegmentCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: SelectableText(
-                      segment.text,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: isPlaying ? Colors.white : const Color(0xDEFFFFFF),
+                    child: SelectionArea(
+                      contextMenuBuilder: (ctx, state) {
+                              return AdaptiveTextSelectionToolbar.buttonItems(
+                                anchors: state.contextMenuAnchors,
+                                buttonItems: [
+                                  ContextMenuButtonItem(
+                                    label: '解析',
+                                    onPressed: () {
+                                      state.copySelection(
+                                          SelectionChangedCause.toolbar);
+                                      Clipboard.getData(Clipboard.kTextPlain)
+                                          .then((data) {
+                                        final phrase = data?.text?.trim() ?? '';
+                                        ContextMenuController.removeAny();
+                                        if (phrase.isNotEmpty) {
+                                          onAnalyze?.call(phrase);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  ContextMenuButtonItem(
+                                    label: '复制',
+                                    onPressed: () {
+                                      state.copySelection(
+                                          SelectionChangedCause.toolbar);
+                                      ContextMenuController.removeAny();
+                                    },
+                                  ),
+                                  ContextMenuButtonItem(
+                                    label: '分享',
+                                    onPressed: () {
+                                      state.copySelection(
+                                          SelectionChangedCause.toolbar);
+                                      Clipboard.getData(Clipboard.kTextPlain)
+                                          .then((data) {
+                                        final text = data?.text?.trim() ?? '';
+                                        ContextMenuController.removeAny();
+                                        if (text.isNotEmpty) {
+                                          Share.share(text);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                ],
+                              );
+                            },
+                      child: Text(
+                        segment.text,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color:
+                              isPlaying ? Colors.white : const Color(0xDEFFFFFF),
+                        ),
                       ),
                     ),
                   ),
@@ -723,7 +1225,6 @@ class _SegmentCard extends StatelessWidget {
                   ),
                 ),
               ],
-              // Actions row
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -755,6 +1256,20 @@ class _SegmentCard extends StatelessWidget {
                     label: const Text('加入Anki', style: TextStyle(fontSize: 12)),
                     onPressed: onPushAnki,
                   ),
+                  // AI analysis records
+                  if (onShowRecords != null)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF6f42c1),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                      ),
+                      icon: const Icon(Icons.psychology, size: 16),
+                      label: const Text('AI解析记录',
+                          style: TextStyle(fontSize: 12)),
+                      onPressed: onShowRecords,
+                    ),
                 ],
               ),
             ],

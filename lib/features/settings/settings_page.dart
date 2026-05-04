@@ -25,6 +25,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _serverUrlCtrl = TextEditingController();
   final _ankiDeckCtrl = TextEditingController();
   final _ankiModelCtrl = TextEditingController();
+  final _aiBaseUrlCtrl = TextEditingController();
+  final _aiModelCtrl = TextEditingController();
+  final _aiApiKeyCtrl = TextEditingController();
+  final _aiPromptCtrl = TextEditingController();
   bool _loadingUser = true;
   bool _saving = false;
   int _cacheBytes = 0;
@@ -51,6 +55,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _serverUrlCtrl.dispose();
     _ankiDeckCtrl.dispose();
     _ankiModelCtrl.dispose();
+    _aiBaseUrlCtrl.dispose();
+    _aiModelCtrl.dispose();
+    _aiApiKeyCtrl.dispose();
+    _aiPromptCtrl.dispose();
     super.dispose();
   }
 
@@ -61,6 +69,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       setState(() {
         _ankiDeckCtrl.text = user.ankiDeckName;
         _ankiModelCtrl.text = user.ankiModelName;
+        _aiBaseUrlCtrl.text = user.aiBaseUrl ?? '';
+        _aiModelCtrl.text = user.aiModel ?? '';
+        _aiApiKeyCtrl.text = ''; // Sensitive, not returned by API
+        _aiPromptCtrl.text = user.aiPrompt ?? '';
         _loadingUser = false;
       });
     } catch (e) {
@@ -117,6 +129,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       await usersApi.updateMe(
         ankiDeckName: _ankiDeckCtrl.text.trim(),
         ankiModelName: _ankiModelCtrl.text.trim(),
+        aiBaseUrl: _aiBaseUrlCtrl.text.trim().isEmpty
+            ? null
+            : _aiBaseUrlCtrl.text.trim(),
+        aiModel: _aiModelCtrl.text.trim().isEmpty
+            ? null
+            : _aiModelCtrl.text.trim(),
+        aiApiKey: _aiApiKeyCtrl.text.trim().isEmpty
+            ? null
+            : _aiApiKeyCtrl.text.trim(),
+        aiPrompt: _aiPromptCtrl.text.trim().isEmpty
+            ? null
+            : _aiPromptCtrl.text.trim(),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -378,6 +402,66 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
                 const SizedBox(height: 16),
 
+                // ── AI Config ────────────────────────────────────────────────
+                _SectionHeader(
+                    title: 'AI 解析', icon: Icons.psychology_outlined),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _aiBaseUrlCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'API Base URL',
+                            helperText:
+                                'OpenAI兼容API地址 (留空则关闭)',
+                            prefixIcon: Icon(Icons.link),
+                          ),
+                          keyboardType: TextInputType.url,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _aiModelCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '模型名称',
+                            helperText:
+                                '例如: gpt-3.5-turbo, deepseek-chat',
+                            prefixIcon:
+                                Icon(Icons.model_training_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _aiApiKeyCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'API Key',
+                            prefixIcon: Icon(Icons.key),
+                          ),
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _aiPromptCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Prompt 模板',
+                            helperText:
+                                // ignore: lines_longer_than_80_chars
+                                '变量: \${phrase}, \${immediateContext}, \${contextStr}\n留空使用默认模板',
+                            prefixIcon:
+                                Icon(Icons.text_snippet_outlined),
+                          ),
+                          maxLines: 6,
+                          minLines: 3,
+                          style: const TextStyle(
+                              fontSize: 12, fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // ── Cache ────────────────────────────────────────────────────
                 _SectionHeader(title: '存储', icon: Icons.storage_outlined),
                 Card(
@@ -398,6 +482,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 Card(
                   child: Column(
                     children: [
+                      ListTile(
+                        leading: const Icon(Icons.history),
+                        title: const Text('AI 解析记录'),
+                        subtitle: const Text('查看所有AI解析历史'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.pushNamed('analysis-records'),
+                      ),
+                      const Divider(height: 1),
                       ListTile(
                         leading: const Icon(Icons.article_outlined),
                         title: const Text('查看日志'),

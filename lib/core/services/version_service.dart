@@ -2,11 +2,11 @@ import 'package:dio/dio.dart';
 
 class VersionService {
   static const currentVersion = '0.1.0';
-  static const githubRepo = 'https://github.com/panjier0409/help_to_learn_app';
+  static const githubRepo = 'https://github.com/zxw7608/help_to_learn_app';
   static const githubReleases =
-      'https://github.com/panjier0409/help_to_learn_app/releases';
+      'https://github.com/zxw7608/help_to_learn_app/releases';
   static const _githubApi =
-      'https://api.github.com/repos/panjier0409/help_to_learn_app/releases/latest';
+      'https://api.github.com/repos/zxw7608/help_to_learn_app/releases/latest';
 
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),

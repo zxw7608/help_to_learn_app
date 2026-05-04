@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/services/playlist_manager.dart';
-import '../../core/services/custom_audio_service.dart';
 import '../../core/models/playlist.dart';
-import '../../main.dart' as app_main;
 
 class PlaylistPage extends ConsumerStatefulWidget {
   const PlaylistPage({super.key});
@@ -42,20 +40,7 @@ class _PlaylistPageState extends ConsumerState<PlaylistPage> {
       ),
       body: state.isEmpty
           ? _buildEmpty()
-          : Column(
-              children: [
-                Expanded(child: _buildList(state, cs)),
-                if (state.hasCurrent)
-                  _MiniPlayerBar(
-                    state: state,
-                    onPlayCurrent: () => ref
-                        .read(playlistManagerProvider.notifier)
-                        .playFromCurrent(),
-                    onTapMode: () =>
-                        ref.read(playlistManagerProvider.notifier).cycleMode(),
-                  ),
-              ],
-            ),
+          : _buildList(state, cs),
     );
   }
 
@@ -285,120 +270,6 @@ class _PlaylistCard extends StatelessWidget {
       ),
       child: Text(label,
           style: const TextStyle(fontSize: 10, color: Colors.white54)),
-    );
-  }
-}
-
-// ─── Mini Player Bar ──────────────────────────────────────────────────────────
-
-class _MiniPlayerBar extends StatelessWidget {
-  final PlaylistState state;
-  final VoidCallback onPlayCurrent;
-  final VoidCallback onTapMode;
-  const _MiniPlayerBar({required this.state, required this.onPlayCurrent, required this.onTapMode});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return ValueListenableBuilder<PlaybackInfo>(
-      valueListenable: app_main.audioService.playbackInfo,
-      builder: (ctx, info, _) {
-        final isPlaying = info.playing;
-        final current = state.current;
-        if (current == null) return const SizedBox.shrink();
-
-        return GestureDetector(
-          onTap: () {
-            final router = GoRouter.of(context);
-            if (router.state?.uri.toString() != '/player') {
-              router.push('/player');
-            }
-          },
-          child: Container(
-            height: 56,
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            decoration: BoxDecoration(
-              color: cs.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: cs.primary.withOpacity(0.25)),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 12),
-                // Play/Pause button
-                IconButton(
-                  icon: Icon(
-                    isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    if (isPlaying) {
-                      app_main.audioService.pause();
-                    } else if (!info.hasSource) {
-                      onPlayCurrent();
-                    } else {
-                      app_main.audioService.play();
-                    }
-                  },
-                  visualDensity: VisualDensity.compact,
-                ),
-                const SizedBox(width: 8),
-                // Title + subtitle
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        current.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isPlaying ? '正在播放' : '已暂停',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isPlaying
-                              ? cs.primary
-                              : Colors.white54,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Mode toggle
-                GestureDetector(
-                  onTap: onTapMode,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          info.playModeLabel,
-                          style: const TextStyle(
-                              fontSize: 10, color: Colors.white38),
-                        ),
-                        const SizedBox(width: 2),
-                        const Icon(Icons.chevron_right,
-                            size: 18, color: Colors.white38),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

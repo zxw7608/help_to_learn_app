@@ -10,6 +10,10 @@ class UserModel {
   final String ankiModelName;
   final String ankiConnectUrl;
   final String ttWorkerUrl;
+  final String? aiBaseUrl;
+  final String? aiApiKey;
+  final String? aiModel;
+  final String? aiPrompt;
   final DateTime createdAt;
   final bool isActive;
 
@@ -23,6 +27,10 @@ class UserModel {
     required this.ankiModelName,
     required this.ankiConnectUrl,
     required this.ttWorkerUrl,
+    this.aiBaseUrl,
+    this.aiApiKey,
+    this.aiModel,
+    this.aiPrompt,
     required this.createdAt,
     required this.isActive,
   });
@@ -39,6 +47,10 @@ class UserModel {
       ankiConnectUrl:
           json['anki_connect_url'] as String? ?? 'http://localhost:8765',
       ttWorkerUrl: json['tts_worker_url'] as String? ?? '',
+      aiBaseUrl: json['ai_base_url'] as String?,
+      aiApiKey: json['ai_api_key'] as String?,
+      aiModel: json['ai_model'] as String?,
+      aiPrompt: json['ai_prompt'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       isActive: json['is_active'] as bool,
     );

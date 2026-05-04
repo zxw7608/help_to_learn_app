@@ -19,6 +19,10 @@ class UsersApi {
     String? telegramBotToken,
     String? ttsWorkerUrl,
     String? ttsToken,
+    String? aiBaseUrl,
+    String? aiApiKey,
+    String? aiModel,
+    String? aiPrompt,
   }) async {
     final body = <String, dynamic>{};
     if (ankiDeckName != null) body['anki_deck_name'] = ankiDeckName;
@@ -28,6 +32,10 @@ class UsersApi {
     if (telegramBotToken != null) body['telegram_bot_token'] = telegramBotToken;
     if (ttsWorkerUrl != null) body['tts_worker_url'] = ttsWorkerUrl;
     if (ttsToken != null) body['tts_token'] = ttsToken;
+    if (aiBaseUrl != null) body['ai_base_url'] = aiBaseUrl;
+    if (aiApiKey != null) body['ai_api_key'] = aiApiKey;
+    if (aiModel != null) body['ai_model'] = aiModel;
+    if (aiPrompt != null) body['ai_prompt'] = aiPrompt;
 
     AppLogger.debug('Updating user settings: ${body.keys}', tag: 'UsersApi');
     final res = await _dio.patch('/api/users/me', data: body);

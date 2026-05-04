@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 
 class VersionService {
-  static const currentVersion = '0.1.0';
+  static const currentVersion = '0.2';
   static const githubRepo = 'https://github.com/zxw7608/help_to_learn_app';
   static const githubReleases =
       'https://github.com/zxw7608/help_to_learn_app/releases';

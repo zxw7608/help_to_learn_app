@@ -16,7 +16,6 @@ import '../../features/playlist/playlist_page.dart';
 import '../api/api_client.dart';
 import '../services/custom_audio_service.dart';
 import '../services/playlist_manager.dart';
-import '../models/playlist.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -44,46 +43,63 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RegisterPage(),
       ),
 
-      // Main shell with bottom navigation
-      ShellRoute(
-        builder: (context, state, child) => MainShell(child: child),
-        routes: [
-          GoRoute(
-            path: '/materials',
-            name: 'materials',
-            builder: (context, state) => const MaterialsListPage(),
+      // Main shell with bottom navigation — StatefulShellRoute preserves
+      // sub-route state (e.g. /materials/:id) when top-level routes like
+      // /player are pushed/popped on the root navigator.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
             routes: [
               GoRoute(
-                path: ':id',
-                name: 'material-detail',
-                builder: (context, state) {
-                  final id = int.parse(state.pathParameters['id']!);
-                  final autoPlay = state.uri.queryParameters['autoPlay'] == 'true';
-                  return MaterialDetailPage(materialId: id, autoPlay: autoPlay);
-                },
+                path: '/materials',
+                name: 'materials',
+                builder: (context, state) => const MaterialsListPage(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    name: 'material-detail',
+                    builder: (context, state) {
+                      final id = int.parse(state.pathParameters['id']!);
+                      final autoPlay =
+                          state.uri.queryParameters['autoPlay'] == 'true';
+                      return MaterialDetailPage(
+                          materialId: id, autoPlay: autoPlay);
+                    },
+                  ),
+                ],
               ),
             ],
           ),
-          GoRoute(
-            path: '/playlist',
-            name: 'playlist',
-            builder: (context, state) => const PlaylistPage(),
-          ),
-          GoRoute(
-            path: '/settings',
-            name: 'settings',
-            builder: (context, state) => const SettingsPage(),
+          StatefulShellBranch(
             routes: [
               GoRoute(
-                path: 'logs',
-                name: 'log-viewer',
-                builder: (context, state) => const LogViewerPage(),
+                path: '/playlist',
+                name: 'playlist',
+                builder: (context, state) => const PlaylistPage(),
               ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
               GoRoute(
-                path: 'analysis-records',
-                name: 'analysis-records',
-                builder: (context, state) =>
-                    const AnalysisRecordsPage(),
+                path: '/settings',
+                name: 'settings',
+                builder: (context, state) => const SettingsPage(),
+                routes: [
+                  GoRoute(
+                    path: 'logs',
+                    name: 'log-viewer',
+                    builder: (context, state) => const LogViewerPage(),
+                  ),
+                  GoRoute(
+                    path: 'analysis-records',
+                    name: 'analysis-records',
+                    builder: (context, state) =>
+                        const AnalysisRecordsPage(),
+                  ),
+                ],
               ),
             ],
           ),
@@ -118,31 +134,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
 // ─── Main Shell (Bottom Nav) ─────────────────────────────────────────────────
 
-String _lastMaterialsPath = '/materials';
-String _lastPlaylistPath = '/playlist';
-String _lastSettingsPath = '/settings';
-
-class MainShell extends ConsumerWidget {
-  final Widget child;
-  const MainShell({super.key, required this.child});
+class MainShell extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
+  const MainShell({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final playlist = ref.watch(playlistManagerProvider);
-    final notifier = ref.read(playlistManagerProvider.notifier);
-
+  Widget build(BuildContext context) {
     return Scaffold(
-      body: child,
+      body: navigationShell,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (playlist.hasCurrent)
-            _GlobalMiniPlayerBar(
-              playlist: playlist,
-              onPlayCurrent: () => notifier.playFromCurrent(),
-              onCycleMode: () => notifier.cycleMode(),
-            ),
-          _BottomNav(),
+          const _GlobalMiniPlayerBar(),
+          _BottomNav(navigationShell: navigationShell),
         ],
       ),
     );
@@ -151,19 +155,16 @@ class MainShell extends ConsumerWidget {
 
 // ─── Global Mini Player Bar ─────────────────────────────────────────────────
 
-class _GlobalMiniPlayerBar extends StatelessWidget {
-  final PlaylistState playlist;
-  final VoidCallback onPlayCurrent;
-  final VoidCallback onCycleMode;
-  const _GlobalMiniPlayerBar({
-    required this.playlist,
-    required this.onPlayCurrent,
-    required this.onCycleMode,
-  });
+class _GlobalMiniPlayerBar extends ConsumerWidget {
+  const _GlobalMiniPlayerBar();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final playlist = ref.watch(playlistManagerProvider);
+    final notifier = ref.read(playlistManagerProvider.notifier);
     final cs = Theme.of(context).colorScheme;
+
+    if (!playlist.hasCurrent) return const SizedBox.shrink();
 
     return ValueListenableBuilder<PlaybackInfo>(
       valueListenable: app_main.audioService.playbackInfo,
@@ -199,7 +200,7 @@ class _GlobalMiniPlayerBar extends StatelessWidget {
                     if (isPlaying) {
                       app_main.audioService.pause();
                     } else if (!info.hasSource) {
-                      onPlayCurrent();
+                      notifier.playFromCurrent();
                     } else {
                       app_main.audioService.play();
                     }
@@ -234,7 +235,7 @@ class _GlobalMiniPlayerBar extends StatelessWidget {
                   ),
                 ),
                 GestureDetector(
-                  onTap: onCycleMode,
+                  onTap: () => notifier.cycleMode(),
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Row(
@@ -259,55 +260,21 @@ class _GlobalMiniPlayerBar extends StatelessWidget {
   }
 }
 
+// ─── Bottom Nav ──────────────────────────────────────────────────────────────
+
 class _BottomNav extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
+  const _BottomNav({required this.navigationShell});
+
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.toString();
-
-    // Track last path for each tab
-    if (location.startsWith('/playlist')) {
-      _lastPlaylistPath = location;
-    } else if (location.startsWith('/settings')) {
-      _lastSettingsPath = location;
-    } else {
-      _lastMaterialsPath = location;
-    }
-
-    int currentIndex;
-    if (location.startsWith('/playlist')) {
-      currentIndex = 1;
-    } else if (location.startsWith('/settings')) {
-      currentIndex = 2;
-    } else {
-      currentIndex = 0;
-    }
-
     return BottomNavigationBar(
-      currentIndex: currentIndex,
+      currentIndex: navigationShell.currentIndex,
       onTap: (i) {
-        switch (i) {
-          case 0:
-            if (location.startsWith('/materials')) {
-              context.go('/materials');
-            } else {
-              context.go(_lastMaterialsPath);
-            }
-            break;
-          case 1:
-            if (location.startsWith('/playlist')) {
-              context.go('/playlist');
-            } else {
-              context.go(_lastPlaylistPath);
-            }
-            break;
-          case 2:
-            if (location.startsWith('/settings')) {
-              context.go('/settings');
-            } else {
-              context.go(_lastSettingsPath);
-            }
-            break;
-        }
+        navigationShell.goBranch(
+          i,
+          initialLocation: i == navigationShell.currentIndex,
+        );
       },
       items: const [
         BottomNavigationBarItem(

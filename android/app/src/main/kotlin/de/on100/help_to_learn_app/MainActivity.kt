@@ -13,6 +13,10 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         var audioChannel: MethodChannel? = null
+
+        // Store incoming text for later delivery if Flutter isn't ready yet
+        @Volatile
+        var pendingProcessText: String? = null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -57,6 +61,56 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        // Channel for receiving text from PROCESS_TEXT intent
+        val processTextChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "help_to_learn/process_text"
+        )
+
+        // Deliver any pending text that arrived before Flutter was ready
+        val pending = pendingProcessText
+        if (pending != null) {
+            pendingProcessText = null
+            Handler(Looper.getMainLooper()).post {
+                processTextChannel.invokeMethod("onProcessText", pending)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Check if we were launched via PROCESS_TEXT
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_PROCESS_TEXT) {
+            val text = intent.getStringExtra(Intent.EXTRA_PROCESS_TEXT)?.trim()
+            if (!text.isNullOrEmpty()) {
+                Log.i("MainActivity", "Received PROCESS_TEXT: ${text.take(100)}...")
+                deliverTextToFlutter(text)
+            }
+        }
+    }
+
+    private fun deliverTextToFlutter(text: String) {
+        val channel = MethodChannel(
+            flutterEngine?.dartExecutor?.binaryMessenger ?: return,
+            "help_to_learn/process_text"
+        )
+        try {
+            channel.invokeMethod("onProcessText", text)
+        } catch (e: Exception) {
+            // Flutter not ready yet — store for later delivery
+            Log.w("MainActivity", "Flutter not ready, storing text for later")
+            pendingProcessText = text
         }
     }
 

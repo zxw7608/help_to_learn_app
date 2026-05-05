@@ -31,7 +31,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      // Auth routes
       GoRoute(
         path: '/auth/login',
         name: 'login',
@@ -43,13 +42,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RegisterPage(),
       ),
 
-      // Main shell with bottom navigation — StatefulShellRoute preserves
-      // sub-route state (e.g. /materials/:id) when top-level routes like
-      // /player are pushed/popped on the root navigator.
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             MainShell(navigationShell: navigationShell),
         branches: [
+          // ── 素材 ────────────────────────────────────────────────────────────
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -72,6 +69,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+
+          // ── 临时素材 ──────────────────────────────────────────────────────
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/temporary-materials',
+                name: 'temporary-materials',
+                builder: (context, state) =>
+                    const MaterialsListPage(temporary: true),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    name: 'temporary-material-detail',
+                    builder: (context, state) {
+                      final id = int.parse(state.pathParameters['id']!);
+                      return MaterialDetailPage(materialId: id);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // ── 播放列表 ──────────────────────────────────────────────────────
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -81,6 +102,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+
+          // ── 设置 ──────────────────────────────────────────────────────────
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -112,7 +135,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'add-material',
         builder: (context, state) {
           final initialUrl = state.uri.queryParameters['url'];
-          return AddMaterialPage(initialUrl: initialUrl);
+          final initialText = state.uri.queryParameters['text'];
+          final temporary = state.uri.queryParameters['temporary'] == 'true';
+          return AddMaterialPage(
+            initialUrl: initialUrl,
+            initialText: initialText,
+            temporary: temporary,
+          );
         },
       ),
       GoRoute(
@@ -132,7 +161,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-// ─── Main Shell (Bottom Nav) ─────────────────────────────────────────────────
+// ─── Main Shell ──────────────────────────────────────────────────────────────
 
 class MainShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -276,11 +305,17 @@ class _BottomNav extends StatelessWidget {
           initialLocation: i == navigationShell.currentIndex,
         );
       },
+      type: BottomNavigationBarType.fixed,
       items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.library_books_outlined),
           activeIcon: Icon(Icons.library_books),
-          label: '素材库',
+          label: '素材',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.bookmark_border),
+          activeIcon: Icon(Icons.bookmark),
+          label: '临时素材',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.queue_music_outlined),

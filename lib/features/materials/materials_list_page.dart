@@ -10,7 +10,8 @@ import '../../core/logging/app_logger.dart';
 import '../../core/services/playlist_manager.dart';
 
 class MaterialsListPage extends ConsumerStatefulWidget {
-  const MaterialsListPage({super.key});
+  final bool temporary;
+  const MaterialsListPage({super.key, this.temporary = false});
 
   @override
   ConsumerState<MaterialsListPage> createState() => _MaterialsListPageState();
@@ -26,11 +27,12 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
   int _total = 0;
   String? _error;
 
-  // Selection
   bool _selectionMode = false;
   final _selectedIds = <int>{};
 
   String? _lastClipboardText;
+
+  bool get _isTemporary => widget.temporary;
 
   @override
   void initState() {
@@ -38,7 +40,8 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     _loadMaterials();
-    AppLogger.info('MaterialsListPage opened', tag: 'MaterialsList');
+    AppLogger.info('MaterialsListPage opened (temporary=$_isTemporary)',
+        tag: 'MaterialsList');
   }
 
   @override
@@ -153,7 +156,11 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     }
 
     try {
-      final result = await materialsApi.list(page: _page, size: 20);
+      final result = await materialsApi.list(
+        page: _page,
+        size: 20,
+        materialType: _isTemporary ? 'temporary' : 'main',
+      );
       setState(() {
         _materials =
             refresh ? result.items : [..._materials, ...result.items];
@@ -244,6 +251,40 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     }
   }
 
+  Future<void> _deleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('批量删除', style: TextStyle(color: Colors.white)),
+        content: Text('确定删除选中的 ${_selectedIds.length} 个素材吗？',
+            style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final ids = _selectedIds.toList();
+    _exitSelectionMode();
+    for (final id in ids) {
+      try { await materialsApi.deleteMaterial(id); } catch (_) {}
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('批量删除完成'), duration: Duration(seconds: 2)),
+      );
+      _loadMaterials(refresh: true);
+    }
+  }
+
   // ─── Build ────────────────────────────────────────────────────────────────
 
   @override
@@ -255,9 +296,9 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('素材库'),
+                  Text(_isTemporary ? '临时素材' : '素材'),
                   if (_total > 0)
-                    Text('共 $_total 个素材',
+                    Text('共 $_total 个',
                         style: const TextStyle(
                             fontSize: 12, color: Colors.white54)),
                 ],
@@ -269,6 +310,12 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
               )
             : null,
         actions: [
+          if (_selectionMode && _selectedIds.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '批量删除',
+              onPressed: _deleteSelected,
+            ),
           if (_selectionMode)
             IconButton(
               icon: const Icon(Icons.select_all),
@@ -288,7 +335,9 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
               tooltip: '添加素材',
-              onPressed: () => context.pushNamed('add-material'),
+              onPressed: () => context.pushNamed('add-material', queryParameters: {
+                if (_isTemporary) 'temporary': 'true',
+              }),
             ),
         ],
       ),
@@ -338,9 +387,18 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
     return RefreshIndicator(
       onRefresh: () => _loadMaterials(refresh: true),
       child: _materials.isEmpty
-          ? _buildEmpty()
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.7,
+                  child: _buildEmpty(),
+                ),
+              ],
+            )
           : ListView.builder(
               controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
               itemCount: _materials.length + (_loadingMore ? 1 : 0),
               itemBuilder: (ctx, i) {
@@ -360,7 +418,10 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
                     if (_selectionMode) {
                       _toggleSelection(mat.id);
                     } else {
-                      context.pushNamed('material-detail',
+                      final routeName = _isTemporary
+                          ? 'temporary-material-detail'
+                          : 'material-detail';
+                      context.pushNamed(routeName,
                           pathParameters: {'id': mat.id.toString()});
                     }
                   },
@@ -402,11 +463,11 @@ class _MaterialsListPageState extends ConsumerState<MaterialsListPage>
           Icon(Icons.library_books_outlined,
               size: 72, color: Colors.white24),
           const SizedBox(height: 16),
-          const Text('还没有素材',
-              style: TextStyle(fontSize: 18, color: Colors.white54)),
+          Text(_isTemporary ? '还没有临时素材' : '还没有素材',
+              style: const TextStyle(fontSize: 18, color: Colors.white54)),
           const SizedBox(height: 8),
-          const Text('点击右上角 + 添加第一个素材',
-              style: TextStyle(fontSize: 14, color: Colors.white38)),
+          Text(_isTemporary ? '浏览网页时选择文本，通过"添加到Help to Learn"快速收藏' : '点击右上角 + 添加第一个素材',
+              style: const TextStyle(fontSize: 14, color: Colors.white38)),
         ],
       ),
     );
@@ -470,7 +531,6 @@ class _MaterialCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Selection checkbox or status icon
               if (selectionMode)
                 Container(
                   width: 44,
@@ -484,10 +544,10 @@ class _MaterialCard extends StatelessWidget {
                         ? Border.all(color: cs.primary, width: 2)
                         : null,
                   ),
-                  child:
-                      Icon(isSelected ? Icons.check : Icons.circle_outlined,
-                          color: isSelected ? cs.primary : Colors.white38,
-                          size: 22),
+                  child: Icon(
+                      isSelected ? Icons.check : Icons.circle_outlined,
+                      color: isSelected ? cs.primary : Colors.white38,
+                      size: 22),
                 )
               else
                 _statusIcon(),
@@ -509,6 +569,8 @@ class _MaterialCard extends StatelessWidget {
                       children: [
                         _chip(material.language.toUpperCase()),
                         _chip(material.sourceType.name),
+                        if (material.materialType == MaterialCategory.temporary)
+                          _chip('临时'),
                         if (material.durationFormatted.isNotEmpty)
                           _chip(material.durationFormatted),
                       ],

@@ -10,7 +10,14 @@ enum _AddMode { url, text, upload }
 
 class AddMaterialPage extends ConsumerStatefulWidget {
   final String? initialUrl;
-  const AddMaterialPage({super.key, this.initialUrl});
+  final String? initialText;
+  final bool temporary;
+  const AddMaterialPage({
+    super.key,
+    this.initialUrl,
+    this.initialText,
+    this.temporary = false,
+  });
 
   @override
   ConsumerState<AddMaterialPage> createState() => _AddMaterialPageState();
@@ -27,11 +34,17 @@ class _AddMaterialPageState extends ConsumerState<AddMaterialPage> {
   String? _pickedFilePath;
   String? _pickedFileName;
 
+  bool get _isTemporary => widget.temporary;
+
   @override
   void initState() {
     super.initState();
     if (widget.initialUrl != null) {
       _urlCtrl.text = widget.initialUrl!;
+    }
+    if (widget.initialText != null) {
+      _mode = _AddMode.text;
+      _textCtrl.text = widget.initialText!;
     }
   }
 
@@ -49,25 +62,28 @@ class _AddMaterialPageState extends ConsumerState<AddMaterialPage> {
       _error = null;
     });
 
+    final mt = _isTemporary ? 'temporary' : 'main';
+
     try {
       switch (_mode) {
         case _AddMode.url:
           final url = _urlCtrl.text.trim();
           if (url.isEmpty) throw Exception('请输入URL');
-          // Detect if it's an article or media URL
           final isArticle = !_isMediaUrl(url);
-          AppLogger.info('Adding material URL: $url (article=$isArticle)',
+          AppLogger.info('Adding material URL: $url (article=$isArticle temporary=$_isTemporary)',
               tag: 'AddMaterial');
           if (isArticle) {
             await materialsApi.importUrlArticle(
                 url: url,
                 title: _titleCtrl.text.isEmpty ? null : _titleCtrl.text,
-                language: _language);
+                language: _language,
+                materialType: mt);
           } else {
             await materialsApi.importUrlMedia(
                 url: url,
                 title: _titleCtrl.text.isEmpty ? null : _titleCtrl.text,
-                language: _language);
+                language: _language,
+                materialType: mt);
           }
           break;
 
@@ -75,10 +91,18 @@ class _AddMaterialPageState extends ConsumerState<AddMaterialPage> {
           final text = _textCtrl.text.trim();
           final title = _titleCtrl.text.trim();
           if (text.isEmpty) throw Exception('请输入文本内容');
-          if (title.isEmpty) throw Exception('请输入标题');
-          AppLogger.info('Adding text material: "$title"', tag: 'AddMaterial');
-          await materialsApi.importText(
-              text: text, title: title, language: _language);
+          if (_isTemporary) {
+            AppLogger.info('Adding text snippet: "$title"', tag: 'AddMaterial');
+            await materialsApi.importTextSnippet(
+                text: text,
+                title: title.isEmpty ? null : title,
+                language: _language);
+          } else {
+            if (title.isEmpty) throw Exception('请输入标题');
+            AppLogger.info('Adding text material: "$title"', tag: 'AddMaterial');
+            await materialsApi.importText(
+                text: text, title: title, language: _language, materialType: mt);
+          }
           break;
 
         case _AddMode.upload:
@@ -92,17 +116,18 @@ class _AddMaterialPageState extends ConsumerState<AddMaterialPage> {
             fileName: _pickedFileName!,
             title: title,
             language: _language,
+            materialType: mt,
           );
           break;
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('✅ 素材已提交，正在处理...'),
-              duration: Duration(seconds: 3)),
+          SnackBar(
+              content: Text(_isTemporary ? '✅ 临时素材已提交，正在处理...' : '✅ 素材已提交，正在处理...'),
+              duration: const Duration(seconds: 3)),
         );
-        context.go('/materials');
+        context.go(_isTemporary ? '/temporary-materials' : '/materials');
       }
     } catch (e, st) {
       AppLogger.error('Add material failed',
@@ -143,7 +168,7 @@ class _AddMaterialPageState extends ConsumerState<AddMaterialPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('添加素材')),
+      appBar: AppBar(title: Text(_isTemporary ? '添加临时素材' : '添加素材')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(

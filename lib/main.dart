@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'app.dart';
 import 'core/logging/app_logger.dart';
 import 'core/api/api_client.dart';
+import 'core/router/app_router.dart';
 import 'core/services/custom_audio_service.dart';
 import 'core/services/playlist_manager.dart';
 
@@ -66,10 +68,40 @@ Future<void> main() async {
     }
   });
 
+  // Listen for Android PROCESS_TEXT (text selection toolbar)
+  if (!kIsWeb && Platform.isAndroid) {
+    const processTextChannel = MethodChannel('help_to_learn/process_text');
+    processTextChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onProcessText') {
+        final text = call.arguments as String?;
+        if (text != null && text.isNotEmpty) {
+          AppLogger.info('Received process text: ${text.length} chars', tag: 'Main');
+          // Navigate to add-material page with text as temporary
+          _navigateToAddTemporary(text);
+        }
+      }
+    });
+  }
+
   AppLogger.info('App started successfully', tag: 'Main');
   runApp(
     ProviderScope(
       child: HelpToLearnApp(audioService: audioService),
     ),
   );
+}
+
+void _navigateToAddTemporary(String text) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final context = rootNavigatorKey.currentContext;
+    if (context != null) {
+      GoRouter.of(context).pushNamed(
+        'add-material',
+        queryParameters: {
+          'text': text,
+          'temporary': 'true',
+        },
+      );
+    }
+  });
 }

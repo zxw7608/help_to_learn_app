@@ -6,6 +6,8 @@ enum SourceType { url_media, url_article, text, upload }
 
 enum MediaType { video, audio, text }
 
+enum MaterialCategory { main, temporary }
+
 class MaterialModel {
   final int id;
   final int userId;
@@ -15,6 +17,7 @@ class MaterialModel {
   final MediaType? mediaType;
   final double? duration;
   final String language;
+  final MaterialCategory materialType;
   final MaterialStatus status;
   final String? errorMsg;
   final bool isDeleted;
@@ -30,6 +33,7 @@ class MaterialModel {
     this.mediaType,
     this.duration,
     required this.language,
+    required this.materialType,
     required this.status,
     this.errorMsg,
     required this.isDeleted,
@@ -52,6 +56,9 @@ class MaterialModel {
           : null,
       duration: (json['duration'] as num?)?.toDouble(),
       language: json['language'] as String,
+      materialType: MaterialCategory.values.firstWhere(
+          (e) => e.name == json['material_type'],
+          orElse: () => MaterialCategory.main),
       status: MaterialStatus.values.firstWhere(
           (e) => e.name == json['status'],
           orElse: () => MaterialStatus.pending),

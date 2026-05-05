@@ -531,6 +531,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
+          // final maxContentHeight = MediaQuery.of(ctx).size.height * 0.6;
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -558,7 +559,13 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
                       ),
                     )
                   else if (_analysisResult != null)
-                    _buildAnalysisWidget(_analysisResult!)
+                    Flexible (
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.vertical, // 明确指定方向
+                        physics: AlwaysScrollableScrollPhysics(), // 强制可滚动
+                        child: _buildAnalysisWidget(_analysisResult!),
+                      ),
+                    )
                   else
                     const Text('暂无结果',
                         style: TextStyle(color: Colors.white54)),
@@ -620,80 +627,92 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
         ),
-        builder: (ctx) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('AI 解析记录 - 片段 #$_recordsSegIndex',
-                    style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white)),
-                const Divider(color: Color(0xFF2A2A3E)),
-                if (_loadingRecords)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else if (_analysisRecords.isEmpty)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40),
-                      child: Text('暂无解析记录',
-                          style: TextStyle(color: Colors.white54)),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _analysisRecords.length,
-                      itemBuilder: (ctx, i) {
-                        final rec = _analysisRecords[i];
-                        return Card(
-                          color: const Color(0xFF2A2A3E),
-                          margin: const EdgeInsets.only(bottom: 8),
+        builder: (ctx) {
+          final maxHeight = MediaQuery
+              .of(ctx)
+              .size
+              .height * 0.65;
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('AI 解析记录 - 片段 #$_recordsSegIndex',
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
+                    const Divider(color: Color(0xFF2A2A3E)),
+                    if (_loadingRecords)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(40),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else
+                      if (_analysisRecords.isEmpty)
+                        const Center(
                           child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('选中短语: ${rec.selectedPhrase}',
-                                    style: const TextStyle(
-                                        color: Color(0xFF6f42c1),
-                                        fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 8),
-                                _buildAnalysisWidget(rec.analysis),
-                                const SizedBox(height: 8),
-                                Text(
-                                  rec.createdAt.toLocal().toString(),
-                                  style: const TextStyle(
-                                      color: Colors.white38, fontSize: 12),
-                                ),
-                              ],
-                            ),
+                            padding: EdgeInsets.all(40),
+                            child: Text('暂无解析记录',
+                                style: TextStyle(color: Colors.white54)),
                           ),
-                        );
-                      },
+                        )
+                      else
+                        Flexible(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _analysisRecords.length,
+                            itemBuilder: (ctx, i) {
+                              final rec = _analysisRecords[i];
+                              return Card(
+                                color: const Color(0xFF2A2A3E),
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment
+                                        .start,
+                                    children: [
+                                      Text('选中短语: ${rec.selectedPhrase}',
+                                          style: const TextStyle(
+                                              color: Color(0xFF6f42c1),
+                                              fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 8),
+                                      _buildAnalysisWidget(rec.analysis),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        rec.createdAt.toLocal().toString(),
+                                        style: const TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('关闭'),
+                      ),
                     ),
-                  ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('关闭'),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       );
     }
   }
@@ -768,6 +787,96 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
     Share.share(url, subject: segment.text);
   }
 
+  // ─── Actions ──────────────────────────────────────────────────────────────
+
+  Future<void> _reExecute() async {
+    try {
+      await materialsApi.reExecute(widget.materialId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已提交重新执行'), duration: Duration(seconds: 2)),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('重新执行失败: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _cleanupStorage() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('清理存储', style: TextStyle(color: Colors.white)),
+        content: const Text('确定清理该素材的音频文件吗？素材记录会保留。',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('清理', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await materialsApi.deleteMaterialStorage(widget.materialId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('存储已清理'), duration: Duration(seconds: 2)),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清理失败: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteMaterial() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('删除素材', style: TextStyle(color: Colors.white)),
+        content: const Text('确定删除该素材吗？此操作不可恢复。',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await materialsApi.deleteMaterial(widget.materialId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('素材已删除'), duration: Duration(seconds: 2)),
+        );
+        GoRouter.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
   // ─── Build ────────────────────────────────────────────────────────────────
 
   @override
@@ -828,12 +937,6 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
           child: Text(_material!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            tooltip: '分享素材',
-            onPressed: _shareMaterial,
-          ),
-          // Bulk Anki push
           if (_pushingAll)
             const Padding(
               padding: EdgeInsets.all(12),
@@ -848,6 +951,57 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
               tooltip: '全部导入Anki',
               onPressed: _segments.isEmpty ? null : _pushAllToAnki,
             ),
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: '分享素材',
+            onPressed: _shareMaterial,
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            color: const Color(0xFF1E1E2E),
+            onSelected: (action) {
+              switch (action) {
+                case 're-execute':
+                  _reExecute();
+                  break;
+                case 'cleanup':
+                  _cleanupStorage();
+                  break;
+                case 'delete':
+                  _deleteMaterial();
+                  break;
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 're-execute',
+                child: ListTile(
+                  leading: Icon(Icons.refresh, color: Colors.white),
+                  title: Text('重新执行', style: TextStyle(color: Colors.white)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'cleanup',
+                child: ListTile(
+                  leading: Icon(Icons.cleaning_services, color: Colors.white),
+                  title: Text('清理存储', style: TextStyle(color: Colors.white)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: Text('删除素材', style: TextStyle(color: Colors.redAccent)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Column(

@@ -25,7 +25,8 @@ subprojects {
 // Read the package attribute from each subproject's AndroidManifest.xml and
 // set it as namespace before AGP creates variants.
 subprojects {
-    afterEvaluate {
+    // 将配置逻辑提取为一个独立的闭包函数
+    val configureNamespace = {
         try {
             val androidExt = extensions.findByName("android")
             if (androidExt is com.android.build.gradle.LibraryExtension && androidExt.namespace == null) {
@@ -36,11 +37,25 @@ subprojects {
                     val pkg = doc.documentElement.getAttribute("package")
                     if (!pkg.isNullOrEmpty()) {
                         androidExt.namespace = pkg
+                    } else {
+                        // 兜底方案：如果解析不到 package，使用 group 名字
+                        androidExt.namespace = project.group.toString()
                     }
                 }
             }
         } catch (_: Exception) {
-            // ignore — not an Android subproject or manifest parsing failed
+            // ignore
+        }
+    }
+
+    // 动态判断生命周期状态
+    if (state.executed) {
+        // 如果子项目已经评估完毕，直接执行
+        configureNamespace()
+    } else {
+        // 如果还没评估，挂载到评估完成后的钩子上
+        afterEvaluate {
+            configureNamespace()
         }
     }
 }

@@ -365,7 +365,7 @@ class _ModeButtons extends ConsumerWidget {
   final PlaylistState playlist;
   const _ModeButtons({required this.playlist});
 
-  static const _speeds = [0.5, 0.75, 1.0, 0.75, 0.5, 0.25];
+  static const _speeds = [1.0, 0.75, 0.5, 0.25];
 
   String _speedLabel(double s) {
     if (s == 1.0) return '1×';
@@ -412,7 +412,7 @@ class _ModeButtons extends ConsumerWidget {
                   value: _speedLabel(liveInfo.speed),
                   onTap: () {
                     final curIdx = _speeds.indexWhere((s) => (liveInfo.speed - s).abs() < 0.01);
-                    final nextIdx = curIdx < 0 ? 3 : (curIdx + 1) % _speeds.length;
+                    final nextIdx = curIdx < 0 ? 0 : (curIdx + 1) % _speeds.length;
                     app_main.audioService.setSpeed(_speeds[nextIdx]);
                   },
                   cs: cs,

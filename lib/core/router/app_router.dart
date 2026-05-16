@@ -202,6 +202,10 @@ class _GlobalMiniPlayerBar extends ConsumerWidget {
         final current = playlist.current;
         if (current == null) return const SizedBox.shrink();
 
+        final progress = info.duration != null && info.duration!.inMilliseconds > 0
+            ? (info.position.inMilliseconds / info.duration!.inMilliseconds).clamp(0.0, 1.0)
+            : 0.0;
+
         return GestureDetector(
           onTap: () {
             if (GoRouterState.of(context).uri.toString() != '/player') {
@@ -209,75 +213,90 @@ class _GlobalMiniPlayerBar extends ConsumerWidget {
             }
           },
           child: Container(
-            height: 56,
+            height: 62,
             margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
             decoration: BoxDecoration(
               color: cs.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: cs.primary.withOpacity(0.25)),
             ),
-            child: Row(
+            child: Column(
               children: [
-                const SizedBox(width: 12),
-                IconButton(
-                  icon: Icon(
-                    isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    if (isPlaying) {
-                      app_main.audioService.pause();
-                    } else if (!info.hasSource) {
-                      notifier.playFromCurrent();
-                    } else {
-                      app_main.audioService.play();
-                    }
-                  },
-                  visualDensity: VisualDensity.compact,
-                ),
-                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        current.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                      const SizedBox(width: 12),
+                      IconButton(
+                        icon: Icon(
+                          isPlaying ? Icons.pause : Icons.play_arrow,
                           color: Colors.white,
+                          size: 24,
+                        ),
+                        onPressed: () {
+                          if (isPlaying) {
+                            app_main.audioService.pause();
+                          } else if (!info.hasSource) {
+                            notifier.playFromCurrent();
+                          } else {
+                            app_main.audioService.play();
+                          }
+                        },
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              current.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              isPlaying ? '正在播放' : '已暂停',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isPlaying ? cs.primary : Colors.white54,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isPlaying ? '正在播放' : '已暂停',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isPlaying ? cs.primary : Colors.white54,
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.undo, color: Colors.white70, size: 18),
+                        tooltip: '后退3秒',
+                        onPressed: info.hasSource
+                            ? () => app_main.audioService.seekRelative(-3)
+                            : null,
+                        visualDensity: VisualDensity.compact,
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.redo, color: Colors.white70, size: 18),
+                        tooltip: '快进3秒',
+                        onPressed: info.hasSource
+                            ? () => app_main.audioService.seekRelative(3)
+                            : null,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const SizedBox(width: 8),
                     ],
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => notifier.cycleMode(),
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          info.playModeLabel,
-                          style: const TextStyle(fontSize: 10, color: Colors.white38),
-                        ),
-                        const SizedBox(width: 2),
-                        const Icon(Icons.chevron_right, size: 18, color: Colors.white38),
-                      ],
-                    ),
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 2,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation<Color>(cs.primary.withOpacity(0.5)),
                   ),
                 ),
               ],

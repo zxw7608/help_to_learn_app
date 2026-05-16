@@ -125,6 +125,8 @@ class _AnalysisRecordsPageState extends State<AnalysisRecordsPage> {
                               const SizedBox(height: 8),
                               Text(
                                 rec.selectedPhrase,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: Color(0xFF6f42c1),
                                   fontWeight: FontWeight.bold,
@@ -132,14 +134,17 @@ class _AnalysisRecordsPageState extends State<AnalysisRecordsPage> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                rec.analysis.length > 300
-                                    ? '${rec.analysis.substring(0, 300)}...'
-                                    : rec.analysis,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13,
-                                  height: 1.5,
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxHeight: 200),
+                                child: SingleChildScrollView(
+                                  child: Text(
+                                    rec.analysis,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                      height: 1.5,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],

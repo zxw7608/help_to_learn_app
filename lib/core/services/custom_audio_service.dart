@@ -78,6 +78,39 @@ class CustomAudioService {
   final _playbackInfo = ValueNotifier<PlaybackInfo>(const PlaybackInfo());
   ValueNotifier<PlaybackInfo> get playbackInfo => _playbackInfo;
 
+  Timer? _positionTimer;
+
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
+      if (!_player.playing) return;
+      _playbackInfo.value = PlaybackInfo(
+        playing: true,
+        title: _playbackInfo.value.title,
+        subtitle: _playbackInfo.value.subtitle,
+        duration: _playbackInfo.value.duration,
+        position: _player.position,
+        hasPrevMaterial: _playbackInfo.value.hasPrevMaterial,
+        hasNextMaterial: _playbackInfo.value.hasNextMaterial,
+        hasPrevSegment: _playbackInfo.value.hasPrevSegment,
+        hasNextSegment: _playbackInfo.value.hasNextSegment,
+        playlistInfo: _playbackInfo.value.playlistInfo,
+        materialTitle: _playbackInfo.value.materialTitle,
+        currentMaterialId: _playbackInfo.value.currentMaterialId,
+        playModeLabel: _playbackInfo.value.playModeLabel,
+        hasPrevPlaylist: _playbackInfo.value.hasPrevPlaylist,
+        hasNextPlaylist: _playbackInfo.value.hasNextPlaylist,
+        speed: _playbackInfo.value.speed,
+        hasSource: _playbackInfo.value.hasSource,
+      );
+    });
+  }
+
+  void _stopPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = null;
+  }
+
   String? _currentSegmentId;
   String? get currentSegmentId => _currentSegmentId;
   SegmentModel? get currentSegment =>
@@ -117,6 +150,10 @@ class CustomAudioService {
   Future<void> setSpeed(double speed) async {
     await _player.setSpeed(speed);
     _sendNotification();
+  }
+
+  Future<double> getSpeed() async{
+    return _player.speed;
   }
 
   void updatePlaylistInfo({
@@ -236,6 +273,7 @@ class CustomAudioService {
   Future<void> play() async {
     try {
       await _player.play();
+      _startPositionTimer();
       await _sendNotification();
     } catch (e, st) {
       AppLogger.error('Error during play()', tag: 'AudioService',
@@ -244,11 +282,13 @@ class CustomAudioService {
   }
 
   Future<void> pause() async {
+    _stopPositionTimer();
     await _player.pause();
     await _sendNotification();
   }
 
   Future<void> stop() async {
+    _stopPositionTimer();
     _foregroundStarted = false;
     await _player.stop();
     _segments = [];
@@ -257,6 +297,16 @@ class CustomAudioService {
 
   Future<void> seek(Duration position) async {
     await _player.seek(position);
+    await _sendNotification();
+  }
+
+  Future<void> seekRelative(int seconds) async {
+    final newPos = _player.position + Duration(seconds: seconds);
+    final dur = _player.duration ?? Duration.zero;
+    final clamped = newPos < Duration.zero
+        ? Duration.zero
+        : (newPos > dur ? dur : newPos);
+    await _player.seek(clamped);
     await _sendNotification();
   }
 

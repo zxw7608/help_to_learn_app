@@ -29,18 +29,24 @@ subprojects {
     val configureNamespace = {
         try {
             val androidExt = extensions.findByName("android")
-            if (androidExt is com.android.build.gradle.LibraryExtension && androidExt.namespace == null) {
-                val manifestFile = file("src/main/AndroidManifest.xml")
-                if (manifestFile.exists()) {
-                    val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance()
-                        .newDocumentBuilder().parse(manifestFile)
-                    val pkg = doc.documentElement.getAttribute("package")
-                    if (!pkg.isNullOrEmpty()) {
-                        androidExt.namespace = pkg
-                    } else {
-                        // 兜底方案：如果解析不到 package，使用 group 名字
-                        androidExt.namespace = project.group.toString()
+            if (androidExt is com.android.build.gradle.LibraryExtension) {
+                if (androidExt.namespace == null) {
+                    val manifestFile = file("src/main/AndroidManifest.xml")
+                    if (manifestFile.exists()) {
+                        val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+                            .newDocumentBuilder().parse(manifestFile)
+                        val pkg = doc.documentElement.getAttribute("package")
+                        if (!pkg.isNullOrEmpty()) {
+                            androidExt.namespace = pkg
+                        } else {
+                            // 兜底方案：如果解析不到 package，使用 group 名字
+                            androidExt.namespace = project.group.toString()
+                        }
                     }
+                }
+                // 旧版插件可能未设置 compileSdk，导致 release 构建出现 lStar 错误
+                if (androidExt.compileSdk == null) {
+                    androidExt.compileSdk = 35
                 }
             }
         } catch (_: Exception) {

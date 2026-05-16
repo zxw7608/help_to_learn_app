@@ -5,6 +5,9 @@ on:
     branches: [master]
   workflow_dispatch: 
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Release APK
@@ -51,8 +54,26 @@ jobs:
           storeFile=../upload-keystore.jks
           EOF
 
+      - name: Set build date
+        run: echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+
       - name: Build APK (release)
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number="${{ env.BUILD_DATE }}"
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk "help_to_learn_${{ env.BUILD_DATE }}.apk"
+
+      - name: Publish to GitHub Release
+        run: |
+          gh release delete "v${{ env.BUILD_DATE }}" --yes --cleanup-tag 2>/dev/null || true
+          sleep 2
+          gh release create "v${{ env.BUILD_DATE }}" \
+            "help_to_learn_${{ env.BUILD_DATE }}.apk" \
+            --title "Release ${{ env.BUILD_DATE }}" \
+            --notes "Automated release build from master branch." \
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

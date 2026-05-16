@@ -44,10 +44,9 @@ subprojects {
                         }
                     }
                 }
-                // 旧版插件可能未设置 compileSdk，导致 release 构建出现 lStar 错误
-                if (androidExt.compileSdk == null) {
-                    androidExt.compileSdk = 35
-                }
+                // 旧版插件可能未设置 compileSdk 或设置了过低版本，
+                // 导致 release 构建出现 lStar 错误（lStar 需要 API 31+）
+                androidExt.compileSdk = 35
             }
         } catch (_: Exception) {
             // ignore

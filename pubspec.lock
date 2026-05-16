@@ -329,10 +329,11 @@ packages:
   flutter_ankidroid:
     dependency: "direct main"
     description:
-      name: flutter_ankidroid
-      sha256: b5a12f91aa0b0171e86115a4424c189726ac2bc1ec6d96f415c92531d031a6aa
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: master
+      resolved-ref: "8fd33ffa66dda14f7c9e53b2f0b6e230cfba0d73"
+      url: "https://github.com/zxw7608/flutter_ankidroid.git"
+    source: git
     version: "0.8.1"
   flutter_cache_manager:
     dependency: transitive

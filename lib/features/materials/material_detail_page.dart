@@ -248,7 +248,7 @@ class _MaterialDetailPageState extends ConsumerState<MaterialDetailPage> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              GoRouter.of(context).push('/material/$newMaterialId');
+              GoRouter.of(context).push('/materials/$newMaterialId');
             },
             child: const Text('跳转'),
           ),

@@ -64,7 +64,7 @@ class PlayerPage extends ConsumerWidget {
                         playlist: playlist,
                         onTapMaterial: () {
                           if (info.currentMaterialId > 0) {
-                            GoRouter.of(context).push('/material/${info.currentMaterialId}');
+                            GoRouter.of(context).go('/materials/${info.currentMaterialId}');
                           }
                         },
                       ),
@@ -75,7 +75,7 @@ class PlayerPage extends ConsumerWidget {
                           children: [
                             GestureDetector(
                               onTap: info.currentMaterialId > 0
-                                  ? () => GoRouter.of(context).push('/material/${info.currentMaterialId}')
+                                  ? () => GoRouter.of(context).go('/materials/${info.currentMaterialId}')
                                   : null,
                               child: Text(
                                 info.title.isNotEmpty ? info.title : '加载中...',
@@ -365,7 +365,7 @@ class _ModeButtons extends ConsumerWidget {
   final PlaylistState playlist;
   const _ModeButtons({required this.playlist});
 
-  static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  static const _speeds = [0.5, 0.75, 1.0, 0.75, 0.5, 0.25];
 
   String _speedLabel(double s) {
     if (s == 1.0) return '1×';
